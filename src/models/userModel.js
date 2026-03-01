@@ -31,9 +31,9 @@ const createUser = async (username, email, password) => {
   return result.rows[0];
 };
 
-const findUserByEmail = async (email) => {
-  const queryText = 'SELECT * FROM users WHERE email = $1';
-  const result = await db.query(queryText, [email]);
+const findUserByEmailOrUsername = async (email = "", username = "") => {
+  const queryText = 'SELECT * FROM users WHERE email = $1 OR username = $2';
+  const result = await db.query(queryText, [email, username]);
   return result.rows[0];
 };
 
@@ -53,6 +53,6 @@ const getUserRoleFromId = async (id) => {
 module.exports = {
   createUserTable,
   createUser,
-  findUserByEmail,
+  findUserByEmailOrUsername,
   getUserRoleFromId,
 };

@@ -1,7 +1,7 @@
 const db = require('../config/db');
 
 const createRegionTable = async () => {
-    const queryText = `
+  const queryText = `
     CREATE TABLE IF NOT EXISTS regions (
       id SERIAL PRIMARY KEY,
       city_code VARCHAR(100) UNIQUE NOT NULL,
@@ -9,33 +9,68 @@ const createRegionTable = async () => {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
   `;
-    try {
-        await db.query(queryText);
-        console.log('Region table created successfully');
-    } catch (error) {
-        console.error('Error creating region table:', error);
-    }
+  try {
+    await db.query(queryText);
+    console.log('Region table created successfully');
+  } catch (error) {
+    console.error('Error creating region table:', error);
+  }
 };
 
 const createRegion = async (city_code, city_name) => {
-    const queryText = `
+  const queryText = `
     INSERT INTO regions (city_code, city_name)
     VALUES ($1, $2)
     RETURNING id, city_code, city_name, created_at;
   `;
-    const values = [city_code, city_name];
-    const result = await db.query(queryText, values);
-    return result.rows[0];
+  const values = [city_code, city_name];
+  const result = await db.query(queryText, values);
+  return result.rows[0];
 };
 
-const findRegionByCityCode = async (city_code) => {
-    const queryText = 'SELECT * FROM regions WHERE city_code = $1';
-    const result = await db.query(queryText, [city_code]);
-    return result.rows[0];
+const findRegionByCityName = async (city_name) => {
+  const queryText = 'SELECT * FROM regions WHERE LOWER(city_name) = LOWER($1)';
+  const result = await db.query(queryText, [city_name]);
+  return result.rows[0];
+};
+
+const PAGE_LIMIT = 20;
+
+const findAllRegions = async (search = null, page = 1) => {
+  const offset = (page - 1) * PAGE_LIMIT;
+  const values = search ? [`%${search}%`, search] : [];
+  const whereClause = search
+    ? `WHERE city_name ILIKE $1 OR city_code = $2`
+    : '';
+
+  const queryText = `
+    SELECT id, city_code, city_name, created_at, COUNT(*) OVER() AS total_count FROM regions
+    ${whereClause} LIMIT $${values.length + 1} OFFSET $${values.length + 2};
+  `;
+
+  values.push(PAGE_LIMIT, offset);
+  const result = await db.query(queryText, values);
+  const rows = result.rows;
+
+  if (rows.length === 0) {
+    return { total_pages: 0, current_page: page, total_regions: 0, data: [] };
+  }
+
+  const totalCount = parseInt(rows[0].total_count, 10);
+  const totalPages = Math.ceil(totalCount / PAGE_LIMIT);
+  const data = rows.map(({ total_count, ...regionData }) => regionData);
+
+  return {
+    total_pages: totalPages,
+    current_page: page,
+    total_regions: totalCount,
+    data,
+  };
 };
 
 module.exports = {
-    createRegionTable,
-    createRegion,
-    findRegionByCityCode,
+  createRegionTable,
+  createRegion,
+  findRegionByCityName,
+  findAllRegions,
 };

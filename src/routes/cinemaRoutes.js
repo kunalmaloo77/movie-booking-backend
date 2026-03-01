@@ -1,9 +1,15 @@
-const express = require('express');
-const { createCinema, findCinemaByCityCode } = require('../controllers/cinemaController.js');
-const { verifyToken, adminVerification } = require('../middleware/authMiddleware.js');
+const express = require("express");
+const {
+  createCinema,
+  findCinemaByMovieIdAndRegionId,
+  findCinemaByRegionId,
+} = require("../controllers/cinemaController.js");
+const { adminVerification } = require("../middleware/authMiddleware.js");
 
 const router = express.Router();
-router.post('/create', adminVerification, createCinema);
-router.get('/find', verifyToken, findCinemaByCityCode);
+
+router.post("/", adminVerification, createCinema);
+router.get("/:region_id", findCinemaByRegionId);
+router.get("/:movie_id/:region_id", findCinemaByMovieIdAndRegionId);
 
 module.exports = router;

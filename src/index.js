@@ -8,11 +8,17 @@ const cinemaRoutes = require('./routes/cinemaRoutes.js');
 const movieRoutes = require('./routes/movieRoutes.js');
 const adminRoutes = require('./routes/adminRoutes.js');
 const showRoutes = require('./routes/showsRoutes.js');
+const screenRoutes = require('./routes/screenRoutes.js');
 
 const { createUserTable } = require('./models/userModel.js');
 const { createRegionTable } = require('./models/regionModel.js');
 const { createCinemaTable } = require('./models/cinemaModel.js');
-const { createMoviesTable, createGenereTable, createGenreMovieTable } = require('./models/moviesModel.js');
+const { createScreensTable } = require('./models/screenModel.js');
+const {
+  createMoviesTable,
+  createGenereTable,
+  createGenreMovieTable,
+} = require('./models/moviesModel.js');
 const { createShowsTable } = require('./models/showsModel.js');
 
 dotenv.config();
@@ -30,28 +36,30 @@ app.use('/api/movie', movieRoutes);
 app.use('/api/cinema', cinemaRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/show', showRoutes);
+app.use('/api/screen', screenRoutes);
 
 // Health check route
 app.get('/', (req, res) => {
-    res.send('API is running...');
+  res.send('API is running...');
 });
 
 // Initialize Database and Start Server
 const startServer = async () => {
-    try {
-        await createUserTable();
-        await createRegionTable();
-        await createCinemaTable();
-        await createMoviesTable();
-        await createGenereTable();
-        await createGenreMovieTable();
-        await createShowsTable();
-        app.listen(PORT, () => {
-            console.log(`Server running on port ${PORT}`);
-        });
-    } catch (error) {
-        console.error('Failed to start server:', error);
-    }
+  try {
+    await createRegionTable();
+    await createCinemaTable();
+    await createScreensTable();
+    await createMoviesTable();
+    await createGenereTable();
+    await createGenreMovieTable();
+    await createShowsTable();
+    await createUserTable();
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+  }
 };
 
 startServer();

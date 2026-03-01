@@ -1,6 +1,6 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { createUser, findUserByEmail } = require('../models/userModel.js');
+const { createUser, findUserByEmailOrUsername } = require('../models/userModel.js');
 
 const register = async (req, res) => {
     const { username, email, password } = req.body;
@@ -11,7 +11,7 @@ const register = async (req, res) => {
 
     try {
         // Check if user already exists
-        const existingUser = await findUserByEmail(email);
+        const existingUser = await findUserByEmailOrUsername(email, username);
         if (existingUser) {
             return res.status(400).json({ message: 'User already exists' });
         }
@@ -47,7 +47,7 @@ const register = async (req, res) => {
 };
 
 const login = async (req, res) => {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
 
     if (!email || !password) {
         return res.status(400).json({ message: 'Please provide email and password' });
@@ -55,7 +55,7 @@ const login = async (req, res) => {
 
     try {
         // Check if user exists
-        const user = await findUserByEmail(email);
+        const user = await findUserByEmailOrUsername(email);
         if (!user) {
             return res.status(400).json({ message: 'Invalid credentials' });
         }

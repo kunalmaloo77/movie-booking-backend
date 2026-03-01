@@ -1,106 +1,283 @@
 const db = require('../config/db');
 
 const createGenereTable = async () => {
-    const queryText = `
+  const queryText = `
     CREATE TABLE IF NOT EXISTS genres (
         id SERIAL PRIMARY KEY,
-        genre_name VARCHAR(100) NOT NULL,
+        name VARCHAR(100) NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
-    `
-    try {
-        await db.query(queryText);
-        console.log('Genres table created successfully');
-    } catch (error) {
-        console.error('Error creating genres table:', error);
-    }
-}
+    `;
+  try {
+    await db.query(queryText);
+    console.log('Genres table created successfully');
+  } catch (error) {
+    console.error('Error creating genres table:', error);
+  }
+};
 
 const createGenreMovieTable = async () => {
-    const queryText = `
+  const queryText = `
     create table if not exists genre_movies (
         id serial primary key,
         genre_id int not null references genres(id),
         movie_id int not null references movies(id),
         created_at timestamp with time zone default current_timestamp
     );
-    `
-    try {
-        await db.query(queryText);
-        console.log('Genre movies table created successfully');
-    } catch (error) {
-        console.error('Error creating genre movies table:', error);
-    }
-}
-
+    `;
+  try {
+    await db.query(queryText);
+    console.log('Genre movies table created successfully');
+  } catch (error) {
+    console.error('Error creating genre movies table:', error);
+  }
+};
 
 const createMoviesTable = async () => {
-    const queryText = `
+  const queryText = `
     CREATE TABLE IF NOT EXISTS movies (
         id SERIAL PRIMARY KEY,
-        movie_name VARCHAR(100) NOT NULL,
+        source VARCHAR(10) NOT NULL DEFAULT 'manual' CHECK (source IN ('manual', 'tmdb')),
+        tmdb_id INT UNIQUE,
+        title VARCHAR(100) NOT NULL,
         rating DECIMAL(3,1) NOT NULL,
         language VARCHAR(100) NOT NULL,
-        censor_rating VARCHAR(10) NOT NULL,
-        duration_minutes INT NOT NULL,
+        adult BOOLEAN NOT NULL,
+        runtime INT,
         release_date DATE NOT NULL,
         poster_image_url VARCHAR(255) NOT NULL,
+        backdrop_image_url VARCHAR(255) NOT NULL,
+        overview TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
-    `
-    try {
-        await db.query(queryText);
-        console.log('Movies table created successfully');
-    } catch (error) {
-        console.error('Error creating movies table:', error);
-    }
+    `;
+  try {
+    await db.query(queryText);
+    console.log('Movies table created successfully');
+  } catch (error) {
+    console.error('Error creating movies table:', error);
+  }
 };
 
-const createMovie = async (movie_name, rating, language, censor_rating, duration_minutes, release_date, poster_image_url) => {
-    const queryText = `
-    INSERT INTO movies (movie_name, rating, language, censor_rating, duration_minutes, release_date, poster_image_url)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
-    RETURNING id, movie_name, rating, language, censor_rating, duration_minutes, release_date, poster_image_url, created_at;
+const createMovie = async (
+  title,
+  source,
+  tmdb_id = null,
+  rating,
+  language,
+  adult,
+  runtime,
+  release_date,
+  poster_image_url,
+  backdrop_image_url,
+  overview
+) => {
+  const queryText = `
+    INSERT INTO movies (title, source, tmdb_id, rating, language, adult, runtime, release_date, poster_image_url, backdrop_image_url, overview)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    RETURNING id, title, source, tmdb_id, rating, language, adult, runtime, release_date, poster_image_url, backdrop_image_url, overview, created_at;
   `;
-    const values = [movie_name, rating, language, censor_rating, duration_minutes, release_date, poster_image_url];
-    const result = await db.query(queryText, values);
-    return result.rows[0];
+  const values = [
+    title,
+    source,
+    tmdb_id,
+    rating,
+    language,
+    adult,
+    runtime,
+    release_date,
+    poster_image_url,
+    backdrop_image_url,
+    overview,
+  ];
+  const result = await db.query(queryText, values);
+  return result.rows[0];
 };
 
-const createGenre = async (genre_name) => {
-    const queryText = `
-    INSERT INTO genres (genre_name)
+const createGenre = async (name) => {
+  const queryText = `
+    INSERT INTO genres (name)
     VALUES ($1)
-    RETURNING id, genre_name, created_at;
+    RETURNING id, name, created_at;
   `;
-    const values = [genre_name];
-    const result = await db.query(queryText, values);
-    return result.rows[0];
+  const values = [name];
+  const result = await db.query(queryText, values);
+  return result.rows[0];
+};
+
+/**
+ * @description Upsert genre generally used to add genres from TMDB API
+ * @param {number} id - The id of the genre
+ * @param {string} name - The name of the genre
+ * @returns {Promise<Object>} The upserted genre
+ * @example
+ * const genre = await upsertGenre(1, 'Action');
+ * console.log(genre);
+ */
+
+const upsertGenre = async (id, name) => {
+  const queryText = `
+    INSERT INTO genres (id, name)
+    VALUES ($1, $2)
+    ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+    RETURNING id, name, created_at;
+  `;
+  const values = [id, name];
+  const result = await db.query(queryText, values);
+  return result.rows[0];
 };
 
 const createGenreMovie = async (genre_id, movie_id) => {
-    const queryText = `
+  const queryText = `
     INSERT INTO genre_movies (genre_id, movie_id)
     VALUES ($1, $2)
     RETURNING id, genre_id, movie_id, created_at;
   `;
-    const values = [genre_id, movie_id];
-    const result = await db.query(queryText, values);
-    return result.rows[0];
+  const values = [genre_id, movie_id];
+  const result = await db.query(queryText, values);
+  return result.rows[0];
+};
+const PAGE_LIMIT = 20;
+
+const fetchMovies = async (search = null, page = 1) => {
+  const offset = (page - 1) * PAGE_LIMIT;
+  let whereClause = '';
+  const values = [];
+
+  if (search) {
+    whereClause = `WHERE title ILIKE $1 OR tmdb_id = $2`;
+    values.push(`%${search}%`, !isNaN(search) ? parseInt(search) : null);
+  }
+
+  let queryText = `
+    SELECT id, title, source, tmdb_id, rating, language, adult, runtime,
+           release_date, poster_image_url, backdrop_image_url, overview, created_at, COUNT(*) OVER() AS total_count
+    FROM movies
+    ${whereClause} LIMIT $${values.length + 1} OFFSET $${values.length + 2};
+  `;
+
+  values.push(PAGE_LIMIT, offset);
+
+  const result = await db.query(queryText, values);
+  const rows = result.rows;
+  const totalCount = rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
+  const totalPages = Math.ceil(totalCount / PAGE_LIMIT);
+  const data = rows.map(({ total_count, ...movieData }) => movieData);
+
+  return {
+    total_pages: totalPages,
+    current_page: page,
+    total_movies: totalCount,
+    data: data,
+  };
 };
 
-const findMovieByMovieCode = async (movie_name) => {
-    const queryText = 'SELECT * FROM movies WHERE movie_name = $1';
-    const result = await db.query(queryText, [movie_name]);
-    return result.rows[0];
+/**
+ * @param {*} movies
+ * @returns Promise<void>
+ *
+ * Function to batch insert movies into the database.
+ * Uses parameterized queries to prevent SQL injection and improve performance.
+ */
+
+const batchInsertMovies = async (movies) => {
+  if (movies.length === 0) return;
+
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+
+    const values = [];
+    const placeholders = movies.map((movie, i) => {
+      const base = i * 10;
+      values.push(
+        movie.title,
+        'tmdb',
+        movie.id,
+        movie.vote_average,
+        movie.original_language,
+        movie.adult,
+        movie.release_date,
+        movie.poster_path,
+        movie.backdrop_path,
+        movie.overview
+      );
+      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10})`;
+    });
+
+    const movieQueryText = `
+      INSERT INTO movies (title, source, tmdb_id, rating, language, adult, release_date, poster_image_url, backdrop_image_url, overview)
+      VALUES ${placeholders.join(', ')}
+      ON CONFLICT (tmdb_id) DO UPDATE SET
+        title = EXCLUDED.title,
+        source = EXCLUDED.source,
+        rating = EXCLUDED.rating,
+        language = EXCLUDED.language,
+        adult = EXCLUDED.adult,
+        release_date = EXCLUDED.release_date,
+        poster_image_url = EXCLUDED.poster_image_url,
+        backdrop_image_url = EXCLUDED.backdrop_image_url,
+        overview = EXCLUDED.overview
+      RETURNING id, tmdb_id
+    `;
+
+    const movieResult = await client.query(movieQueryText, values);
+
+    // Map tmdb_id -> db id from returned rows
+    const tmdbIdToDbId = {};
+    movieResult.rows.forEach((row) => {
+      tmdbIdToDbId[row.tmdb_id] = row.id;
+    });
+
+    // Build (movie_id, genre_id) pairs per movie using its returned db id
+    const genrePairs = [];
+    movies.forEach((movie) => {
+      if (movie.genre_ids && Array.isArray(movie.genre_ids)) {
+        const dbId = tmdbIdToDbId[movie.id];
+        if (dbId) {
+          movie.genre_ids.forEach((genre_id) =>
+            genrePairs.push([dbId, genre_id])
+          );
+        }
+      }
+    });
+
+    if (genrePairs.length > 0) {
+      const genreValues = [];
+      const genrePlaceholders = genrePairs.map((pair, i) => {
+        const base = i * 2;
+        genreValues.push(pair[0], pair[1]);
+        return `($${base + 1}, $${base + 2})`;
+      });
+
+      const genreQueryText = `
+        INSERT INTO genre_movies (movie_id, genre_id)
+        VALUES ${genrePlaceholders.join(', ')}
+        ON CONFLICT DO NOTHING
+      `;
+
+      await client.query(genreQueryText, genreValues);
+    }
+
+    await client.query('COMMIT');
+    console.log(`Inserted ${movies.length} movies`);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error batch inserting movies:', error);
+    throw error;
+  } finally {
+    client.release();
+  }
 };
 
 module.exports = {
-    createGenereTable,
-    createGenreMovieTable,
-    createMoviesTable,
-    createMovie,
-    findMovieByMovieCode,
-    createGenre,
-    createGenreMovie,
+  createGenereTable,
+  createGenreMovieTable,
+  createMoviesTable,
+  createMovie,
+  createGenre,
+  upsertGenre,
+  createGenreMovie,
+  fetchMovies,
+  batchInsertMovies,
 };
