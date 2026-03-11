@@ -5,17 +5,19 @@ const {
 } = require('../models/screenModel');
 
 const createScreenController = async (req, res) => {
-  const { screen_name, cinema_id, number_of_seats } = req.body;
-  if (!screen_name || !cinema_id || !number_of_seats) {
+  const { name, cinema_id, screen_type, total_capacity } = req.body;
+  if (!name || !cinema_id || !screen_type || !total_capacity) {
     return res.status(400).json({
-      error: 'Screen name, cinema ID, and number of seats are required',
+      error:
+        'Screen name, cinema ID, screen type, and total capacity are required',
     });
   }
   try {
     const newScreen = await createScreen(
       cinema_id,
-      screen_name,
-      number_of_seats
+      name,
+      screen_type,
+      total_capacity
     );
     res.status(201).json(newScreen);
   } catch (error) {

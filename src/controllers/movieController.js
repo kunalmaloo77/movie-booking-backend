@@ -3,6 +3,8 @@ const {
   createMovie,
   createGenreMovie,
   fetchMovies,
+  fetchGenres,
+  updateMovieRuntime,
 } = require('../models/moviesModel');
 const { pool } = require('../config/db');
 
@@ -89,7 +91,7 @@ const createNewMovie = async (req, res) => {
 const getMoviesByRegion = async (req, res) => {
   try {
     const queryText = `
-          SELECT movies.id, movies.title, movies.poster_image_url, movies.rating, STRING_AGG(genres.name, ', ') AS genres
+          SELECT movies.id, movies.title, movies.poster_image_url, movies.backdrop_image_url, movies.rating, movies.overview, movies.adult, STRING_AGG(genres.name, ', ') AS genres
           FROM movies
           JOIN genre_movies ON movies.id = genre_movies.movie_id
           JOIN genres ON genre_movies.genre_id = genres.id
@@ -98,7 +100,7 @@ const getMoviesByRegion = async (req, res) => {
           JOIN cinemas ON screens.cinema_id = cinemas.id
           JOIN regions ON cinemas.region_id = regions.id
           WHERE regions.id = $1
-		  GROUP BY movies.id, movies.title, movies.poster_image_url, movies.rating;
+		  GROUP BY movies.id, movies.title, movies.poster_image_url, movies.backdrop_image_url, movies.rating, movies.overview, movies.adult;
         `;
     const result = await pool.query(queryText, [req.params.id]);
     res.status(200).json(result.rows);
@@ -110,12 +112,12 @@ const getMoviesByRegion = async (req, res) => {
 const getMovieById = async (req, res) => {
   try {
     const queryText = `
-          SELECT movies.title, movies.poster_image_url, movies.rating, STRING_AGG(genres.name, ', ') AS genres
-          FROM movies
-          JOIN genre_movies ON movies.id = genre_movies.movie_id
-          JOIN genres ON genre_movies.genre_id = genres.id
-          WHERE movies.id = $1
-		  GROUP BY movies.id, movies.title, movies.poster_image_url, movies.rating;
+        SELECT movies.title, movies.poster_image_url, movies.backdrop_image_url, movies.rating, movies.overview, movies.runtime, movies.adult, STRING_AGG(genres.name, ', ') AS genres
+        FROM movies
+        JOIN genre_movies ON movies.id = genre_movies.movie_id
+        JOIN genres ON genre_movies.genre_id = genres.id
+        WHERE movies.id = $1
+		  GROUP BY movies.id, movies.title, movies.poster_image_url, movies.backdrop_image_url, movies.rating, movies.overview, movies.runtime, movies.adult;
         `;
     const result = await pool.query(queryText, [req.params.id]);
     res.status(200).json(result.rows[0]);
@@ -126,9 +128,8 @@ const getMovieById = async (req, res) => {
 
 const getGenres = async (req, res) => {
   try {
-    const queryText = `SELECT id, name FROM genres;`;
-    const result = await pool.query(queryText);
-    res.status(200).json(result.rows);
+    const genres = await fetchGenres();
+    res.status(200).json(genres);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -153,28 +154,24 @@ const getMovies = async (req, res) => {
   }
 };
 
-const getTMDBMovieDetails = async (req, res) => {
+const fetchAndUpdateMovieRuntime = async (tmdb_id) => {
   try {
-    const { tmdb_id } = req.params;
-    const apiKey = process.env.TMDB_API_KEY;
     const response = await fetch(
       `https://api.themoviedb.org/3/movie/${tmdb_id}`,
       {
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          Authorization: `Bearer ${process.env.TMDB_API_KEY}`,
           'Content-Type': 'application/json',
         },
       }
     );
     if (!response.ok) {
-      return res
-        .status(response.status)
-        .json({ message: 'Failed to fetch from TMDB' });
+      throw new Error(`Failed to fetch from TMDB: ${response.status}`);
     }
     const data = await response.json();
-    res.status(200).json({ runtime: data.runtime });
+    await updateMovieRuntime(data?.id, data?.runtime);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    throw error;
   }
 };
 
@@ -185,5 +182,5 @@ module.exports = {
   getMovieById,
   getGenres,
   getMovies,
-  getTMDBMovieDetails,
+  fetchAndUpdateMovieRuntime,
 };

@@ -1,5 +1,5 @@
-const db = require("../config/db");
-const crypto = require("crypto");
+const db = require('../config/db');
+const crypto = require('crypto');
 
 const createCinemaTable = async () => {
   const queryText = `
@@ -14,9 +14,9 @@ const createCinemaTable = async () => {
     `;
   try {
     await db.query(queryText);
-    console.log("Cinema table created successfully");
+    console.log('Cinema table created successfully');
   } catch (error) {
-    console.error("Error creating cinema table:", error);
+    console.error('Error creating cinema table:', error);
   }
 };
 
@@ -26,7 +26,7 @@ const createCinema = async (cinema_name, address, city_code) => {
   let attempts = 0;
   while (attempts < maxRetries) {
     try {
-      const cinema_code = crypto.randomBytes(4).toString("hex").toUpperCase();
+      const cinema_code = crypto.randomBytes(4).toString('hex').toUpperCase();
       const queryText = `
                 INSERT INTO cinemas (cinema_name, cinema_code, address, region_id)
                 SELECT $1, $2, $3, id
@@ -41,7 +41,7 @@ const createCinema = async (cinema_name, address, city_code) => {
       }
       return result.rows[0];
     } catch (error) {
-      if (error.code === "23505" && attempts < maxRetries - 1) {
+      if (error.code === '23505' && attempts < maxRetries - 1) {
         attempts++;
         continue; // retry with new code
       }
@@ -51,7 +51,7 @@ const createCinema = async (cinema_name, address, city_code) => {
 };
 
 const findCinemaByCinemaCode = async (cinema_code) => {
-  const queryText = "SELECT * FROM cinemas WHERE cinema_code = $1";
+  const queryText = 'SELECT * FROM cinemas WHERE cinema_code = $1';
   const result = await db.query(queryText, [cinema_code]);
   return result.rows[0];
 };
@@ -69,7 +69,7 @@ const findCinemaByRegionId = async (region_id) => {
     const result = await db.query(queryText, [region_id]);
     return result.rows;
   } catch (error) {
-    console.error("Error finding cinema by region id:", error);
+    console.error('Error finding cinema by region id:', error);
     return [];
   }
 };
@@ -77,11 +77,11 @@ const findCinemaByRegionId = async (region_id) => {
 const findCinemaByMovieIdAndRegionId = async (region_id, movie_id) => {
   try {
     const queryText = `SELECT 
-    cinemas.id,
+    cinemas.id as cinema_id,
     cinemas.cinema_name,
     cinemas.cinema_code,
     cinemas.address,
-    shows.id,
+    shows.id as show_id,
     shows.show_time,
     shows.movie_id
     FROM cinemas 
@@ -92,7 +92,7 @@ const findCinemaByMovieIdAndRegionId = async (region_id, movie_id) => {
     const result = await db.query(queryText, [region_id, movie_id]);
     return result.rows;
   } catch (error) {
-    console.error("Error finding cinema by movie id and region id:", error);
+    console.error('Error finding cinema by movie id and region id:', error);
     return [];
   }
 };

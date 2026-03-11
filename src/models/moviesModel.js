@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const PAGE_LIMIT = 20;
 
 const createGenereTable = async () => {
   const queryText = `
@@ -105,6 +106,16 @@ const createGenre = async (name) => {
   return result.rows[0];
 };
 
+const fetchGenres = async () => {
+  try {
+    const queryText = `SELECT id, name FROM genres ORDER BY name;`;
+    const result = await db.query(queryText);
+    return result.rows;
+  } catch (error) {
+    throw error;
+  }
+};
+
 /**
  * @description Upsert genre generally used to add genres from TMDB API
  * @param {number} id - The id of the genre
@@ -129,6 +140,7 @@ const upsertGenre = async (id, name) => {
 
 const createGenreMovie = async (genre_id, movie_id) => {
   const queryText = `
+    id SERIAL PRIMARY KEY,
     INSERT INTO genre_movies (genre_id, movie_id)
     VALUES ($1, $2)
     RETURNING id, genre_id, movie_id, created_at;
@@ -137,7 +149,6 @@ const createGenreMovie = async (genre_id, movie_id) => {
   const result = await db.query(queryText, values);
   return result.rows[0];
 };
-const PAGE_LIMIT = 20;
 
 const fetchMovies = async (search = null, page = 1) => {
   const offset = (page - 1) * PAGE_LIMIT;
@@ -183,7 +194,7 @@ const fetchMovies = async (search = null, page = 1) => {
 const batchInsertMovies = async (movies) => {
   if (movies.length === 0) return;
 
-  const client = await db.connect();
+  const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
 
@@ -270,8 +281,36 @@ const batchInsertMovies = async (movies) => {
   }
 };
 
+const updateMovieRuntime = async (tmdb_id, runtime) => {
+  try {
+    const queryText = `
+        UPDATE movies SET runtime = $1 WHERE tmdb_id = $2;
+      `;
+    const result = await db.query(queryText, [runtime, tmdb_id]);
+    if (result.rowCount === 0) {
+      throw new Error('Movie not found with the given tmdb_id');
+    }
+  } catch (error) {
+    throw error;
+  }
+};
+
+const getTMDBIdByMovieId = async (movie_id) => {
+  try {
+    const queryText = `SELECT tmdb_id FROM movies WHERE id = $1;`;
+    const result = await db.query(queryText, [movie_id]);
+    if (result.rows.length === 0) {
+      throw new Error('Movie not found with the given id');
+    }
+    return result.rows[0].tmdb_id;
+  } catch (error) {
+    throw error;
+  }
+};
+
 module.exports = {
   createGenereTable,
+  fetchGenres,
   createGenreMovieTable,
   createMoviesTable,
   createMovie,
@@ -280,4 +319,6 @@ module.exports = {
   createGenreMovie,
   fetchMovies,
   batchInsertMovies,
+  updateMovieRuntime,
+  getTMDBIdByMovieId,
 };
