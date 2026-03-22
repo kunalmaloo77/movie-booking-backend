@@ -97,10 +97,37 @@ const findCinemaByMovieIdAndRegionId = async (region_id, movie_id) => {
   }
 };
 
+const searchCinemas = async (region_id = null, q = null) => {
+  let conditions = [];
+  let values = [];
+  let idx = 1;
+  if (region_id) {
+    conditions.push('regions.id = $' + idx++);
+    values.push(region_id);
+  }
+  if (q) {
+    conditions.push('cinemas.cinema_name ILIKE $' + idx++);
+    values.push(`%${q}%`);
+  }
+  const whereClause =
+    conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+  const queryText = `
+      SELECT cinemas.id, cinemas.cinema_name
+      FROM cinemas
+      JOIN regions ON cinemas.region_id = regions.id
+      ${whereClause}
+      ORDER BY cinemas.cinema_name
+      LIMIT 10;
+    `;
+  const result = await db.query(queryText, values);
+  return result.rows;
+};
+
 module.exports = {
   createCinemaTable,
   createCinema,
   findCinemaByCinemaCode,
   findCinemaByRegionId,
   findCinemaByMovieIdAndRegionId,
+  searchCinemas,
 };

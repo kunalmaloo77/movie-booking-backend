@@ -5,22 +5,32 @@ const {
   findSeatsByShowId,
   createShowSeat,
   findSeatsByScreenId,
+  findOverlappingShows,
 } = require('../models/showsModel.js');
 
 const {
   fetchAndUpdateMovieRuntime,
 } = require('../controllers/movieController.js');
-const { getTMDBIdByMovieId } = require('../models/moviesModel.js');
+const {
+  getTMDBIdByMovieId,
+  getMovieRuntimeById,
+} = require('../models/moviesModel.js');
 
-const createShowSeatByScreenId = async (show_id, screen_id, price) => {
+const createShowSeatByScreenId = async (show_id, screen_id, category_price) => {
   try {
     const seats = await findSeatsByScreenId(screen_id);
     const showSeats = [];
     for (const seat of seats) {
-      const { id: seat_id } = seat;
+      const { id: seat_id, category_id } = seat;
+      const price = category_price.find(
+        (cat) => cat.category_id === category_id
+      )?.price;
       const showSeat = await createShowSeat(show_id, seat_id, price);
       showSeats.push(showSeat);
     }
+    console.log(
+      `Created ${showSeats.length} show seats for show_id ${show_id}`
+    );
     return showSeats;
   } catch (error) {
     throw new Error('Failed to create show seats');
@@ -28,34 +38,56 @@ const createShowSeatByScreenId = async (show_id, screen_id, price) => {
 };
 
 const createNewShow = async (req, res) => {
-  const { movie_id, screen_id, show_date, show_time, price, language } =
-    req.body;
+  const {
+    movie_id,
+    screen_id,
+    show_date,
+    show_time,
+    category_price,
+    language,
+  } = req.body;
 
   if (
     !movie_id ||
     !screen_id ||
     !show_date ||
     !show_time ||
-    !price ||
+    !category_price ||
     !language
   ) {
     return res.status(400).json({
       message:
-        'All fields are required: movie_id, screen_id, show_date, show_time, price, language.',
+        'All fields are required: movie_id, screen_id, show_date, show_time, category_price, language.',
     });
   }
 
   try {
+    const runtime = await getMovieRuntimeById(movie_id);
+
+    if (runtime) {
+      const overlapping = await findOverlappingShows(
+        screen_id,
+        show_date,
+        show_time,
+        runtime
+      );
+      if (overlapping.length > 0) {
+        const conflict = overlapping[0];
+        return res.status(409).json({
+          message: `Show time conflicts with "${conflict.title}" starting at ${conflict.show_time} (runtime: ${conflict.runtime} min). Please choose a different time.`,
+        });
+      }
+    }
+
     const show = await createShow(
       movie_id,
       screen_id,
       show_date,
       show_time,
-      price,
       language
     );
 
-    await createShowSeatByScreenId(show.id, screen_id, price);
+    await createShowSeatByScreenId(show.id, screen_id, category_price);
 
     const tmdb_id = await getTMDBIdByMovieId(movie_id);
 

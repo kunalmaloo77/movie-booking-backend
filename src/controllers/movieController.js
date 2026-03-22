@@ -5,6 +5,7 @@ const {
   fetchMovies,
   fetchGenres,
   updateMovieRuntime,
+  getMoviesFromRegion,
 } = require('../models/moviesModel');
 const { pool } = require('../config/db');
 
@@ -90,20 +91,8 @@ const createNewMovie = async (req, res) => {
 
 const getMoviesByRegion = async (req, res) => {
   try {
-    const queryText = `
-          SELECT movies.id, movies.title, movies.poster_image_url, movies.backdrop_image_url, movies.rating, movies.overview, movies.adult, STRING_AGG(genres.name, ', ') AS genres
-          FROM movies
-          JOIN genre_movies ON movies.id = genre_movies.movie_id
-          JOIN genres ON genre_movies.genre_id = genres.id
-          JOIN shows ON movies.id = shows.movie_id
-          JOIN screens ON shows.screen_id = screens.id
-          JOIN cinemas ON screens.cinema_id = cinemas.id
-          JOIN regions ON cinemas.region_id = regions.id
-          WHERE regions.id = $1
-		  GROUP BY movies.id, movies.title, movies.poster_image_url, movies.backdrop_image_url, movies.rating, movies.overview, movies.adult;
-        `;
-    const result = await pool.query(queryText, [req.params.id]);
-    res.status(200).json(result.rows);
+    const result = await getMoviesFromRegion(req.params.id);
+    res.status(200).json(result);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

@@ -17,6 +17,26 @@ const createGenereTable = async () => {
   }
 };
 
+const getMoviesFromRegion = async (region_id) => {
+  try {
+    const queryText = `
+    SELECT m.id, m.title, m.poster_image_url, m.backdrop_image_url, m.rating, m.overview, m.adult, STRING_AGG(DISTINCT g.name, ', ') AS genres
+          FROM movies m
+          JOIN genre_movies gm ON m.id = gm.movie_id
+          JOIN genres g ON gm.genre_id = g.id
+          JOIN shows s ON m.id = s.movie_id AND s.show_date > CURRENT_DATE
+          JOIN screens sc ON s.screen_id = sc.id
+          JOIN cinemas c ON sc.cinema_id = c.id
+          WHERE c.region_id = $1
+		  GROUP BY m.id, m.title, m.poster_image_url, m.backdrop_image_url, m.rating, m.overview, m.adult;`;
+    const result = await db.query(queryText, [region_id]);
+    return result.rows;
+  } catch (error) {
+    console.error('Error fetching movies from region:', error);
+    throw error;
+  }
+};
+
 const createGenreMovieTable = async () => {
   const queryText = `
     create table if not exists genre_movies (
@@ -295,6 +315,13 @@ const updateMovieRuntime = async (tmdb_id, runtime) => {
   }
 };
 
+const getMovieRuntimeById = async (movie_id) => {
+  const result = await db.query('SELECT runtime FROM movies WHERE id = $1', [
+    movie_id,
+  ]);
+  return result.rows[0]?.runtime ?? null;
+};
+
 const getTMDBIdByMovieId = async (movie_id) => {
   try {
     const queryText = `SELECT tmdb_id FROM movies WHERE id = $1;`;
@@ -320,5 +347,7 @@ module.exports = {
   fetchMovies,
   batchInsertMovies,
   updateMovieRuntime,
+  getMovieRuntimeById,
+  getMoviesFromRegion,
   getTMDBIdByMovieId,
 };

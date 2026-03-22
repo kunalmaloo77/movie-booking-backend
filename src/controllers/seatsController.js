@@ -2,7 +2,9 @@ const {
   createSeatCategory,
   createSeat,
   findSeatsByScreenId,
+  getSeatCategoriesByScreenId,
 } = require('../models/showsModel.js');
+const { insertSeatsBatch } = require('../utils/seatService.js');
 
 const handleCreateSeatCategory = async (req, res) => {
   const { name, description } = req.body;
@@ -17,25 +19,19 @@ const handleCreateSeatCategory = async (req, res) => {
   }
 };
 
+/**
+ * Now this logic is handled in screenController when creating a screen, so that seat creation can be done in batch for better performance.
+ * This is for potential future use if we want to create seats independently of screens.
+ */
 const handleCreateSeat = async (req, res) => {
   const seats_array = req.body;
-  if (!seats_array || !Array.isArray(seats_array)) {
+  if (!seats_array || !Array.isArray(seats_array) || seats_array.length === 0) {
     return res.status(400).json({
-      error: 'Invalid seats array provided',
+      error: 'seats_array must be a non-empty array',
     });
   }
   try {
-    const createdSeats = [];
-    for (const seatData of seats_array) {
-      const { row_label, column_label, screen_id, category_id } = seatData;
-      const seat = await createSeat(
-        row_label,
-        column_label,
-        screen_id,
-        category_id
-      );
-      createdSeats.push(seat);
-    }
+    const createdSeats = await insertSeatsBatch(seats_array);
     res.status(201).json(createdSeats);
   } catch (error) {
     res.status(500).json({ error: 'Failed to create seats' });
@@ -68,8 +64,19 @@ const getSeatsByScreenId = async (req, res) => {
   }
 };
 
+const handleGetSeatCategoriesByScreenId = async (req, res) => {
+  try {
+    const { screen_id } = req.params;
+    const categories = await getSeatCategoriesByScreenId(screen_id);
+    res.status(200).json(categories);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch seat categories' });
+  }
+};
+
 module.exports = {
   handleCreateSeatCategory,
   handleCreateSeat,
   getSeatsByScreenId,
+  handleGetSeatCategoriesByScreenId,
 };

@@ -1,6 +1,7 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
+const Razorpay = require('razorpay');
 
 const authRoutes = require('./routes/authRoutes.js');
 const regionRoutes = require('./routes/regionRoutes.js');
@@ -15,7 +16,10 @@ const bookingRoutes = require('./routes/bookingRoutes.js');
 const { createUserTable } = require('./models/userModel.js');
 const { createRegionTable } = require('./models/regionModel.js');
 const { createCinemaTable } = require('./models/cinemaModel.js');
-const { createScreensTable } = require('./models/screenModel.js');
+const {
+  createScreensTable,
+  createScreensTypeTable,
+} = require('./models/screenModel.js');
 const {
   createMoviesTable,
   createGenereTable,
@@ -30,25 +34,47 @@ const {
 const {
   createBookingSeatsTable,
   createBookingTable,
+  releaseExpiredReservations,
 } = require('./models/bookingModel.js');
+
+const db = require('./config/db.js');
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const razorpayInstance = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET,
+});
+app.set('razorpay', razorpayInstance);
+app.set('db', db);
+
 app.use(cors());
+
+// Webhook must be registered before express.json() so raw body is preserved for signature verification
+app.use(
+  '/api/booking/webhook',
+  express.raw({ type: 'application/json' }),
+  (req, res, next) => {
+    req.rawBody = req.body;
+    req.body = JSON.parse(req.body.toString());
+    next();
+  }
+);
+
 app.use(express.json());
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/region', regionRoutes);
 app.use('/api/movie', movieRoutes);
 app.use('/api/cinema', cinemaRoutes);
-app.use('/api/admin', adminRoutes);
 app.use('/api/show', showRoutes);
 app.use('/api/screen', screenRoutes);
-app.use('/api/seat', seatRoutes);
+app.use('/api/seats', seatRoutes);
 app.use('/api/booking', bookingRoutes);
 
 // Health check route
@@ -56,11 +82,11 @@ app.get('/', (req, res) => {
   res.send('API is running...');
 });
 
-// Initialize Database and Start Server
 const startServer = async () => {
   try {
     await createRegionTable();
     await createCinemaTable();
+    await createScreensTypeTable();
     await createScreensTable();
     await createMoviesTable();
     await createGenereTable();
@@ -72,6 +98,9 @@ const startServer = async () => {
     await createBookingTable();
     await createBookingSeatsTable();
     await createUserTable();
+
+    setInterval(releaseExpiredReservations, 60 * 1000);
+
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });

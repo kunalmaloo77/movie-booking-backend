@@ -52,6 +52,36 @@ const findShowsByMovieId = async (movie_id) => {
   return result.rows;
 };
 
+// Returns any existing show on the same screen+date whose runtime window overlaps
+// with [show_time, show_time + runtime_minutes).
+const findOverlappingShows = async (
+  screen_id,
+  show_date,
+  show_time,
+  runtime_minutes
+) => {
+  const queryText = `
+    SELECT s.id, s.show_time, m.title, m.runtime
+    FROM shows s
+    JOIN movies m ON s.movie_id = m.id
+    WHERE s.screen_id = $1
+      AND s.show_date = $2
+      AND s.status != 'cancelled'
+      AND (
+        s.show_time < ($3::time + ($4 || ' minutes')::interval)
+        AND (s.show_time + (m.runtime || ' minutes')::interval) > $3::time
+      )
+    LIMIT 1;
+  `;
+  const result = await db.query(queryText, [
+    screen_id,
+    show_date,
+    show_time,
+    runtime_minutes,
+  ]);
+  return result.rows;
+};
+
 const createSeatCategoriesTable = async () => {
   const queryText = `
     CREATE TABLE IF NOT EXISTS seat_categories (
@@ -161,19 +191,23 @@ const createShowSeatsTable = async () => {
 };
 
 const createShowSeat = async (show_id, seat_id, price) => {
-  try {
-    const queryText = `
-      INSERT INTO show_seats (show_id, seat_id, price)
-      VALUES ($1, $2, $3)
-      RETURNING id, show_id, seat_id, price;
-    `;
-    const values = [show_id, seat_id, price];
-    const result = await db.query(queryText, values);
-    return result.rows[0];
-  } catch (error) {
-    console.error('Error creating show seat:', error);
-    throw new Error('Failed to create show seat');
-  }
+  const queryText = `
+    INSERT INTO show_seats (show_id, seat_id, price)
+    VALUES ($1, $2, $3)
+    RETURNING id, show_id, seat_id, price;
+  `;
+  const values = [show_id, seat_id, price];
+  const result = await db.query(queryText, values);
+  return result.rows[0];
+};
+
+const getSeatCategoriesByScreenId = async (screen_id) => {
+  const queryText = `
+    SELECT DISTINCT sc.id, sc.name, sc.description FROM seats s 
+    JOIN seat_categories sc ON s.category_id = sc.id 
+    WHERE s.screen_id = $1 ORDER BY sc.id`;
+  const result = await db.query(queryText, [screen_id]);
+  return result.rows;
 };
 
 module.exports = {
@@ -184,9 +218,11 @@ module.exports = {
   createShow,
   findShowsByScreenId,
   findShowsByMovieId,
+  findOverlappingShows,
   createSeatsTable,
   createSeatCategoriesTable,
   createShowSeatsTable,
   createSeatCategory,
   createShowSeat,
+  getSeatCategoriesByScreenId,
 };
