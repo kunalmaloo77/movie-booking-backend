@@ -22,7 +22,7 @@ const {
 } = require('./models/screenModel.js');
 const {
   createMoviesTable,
-  createGenereTable,
+  createGenreTable,
   createGenreMovieTable,
 } = require('./models/moviesModel.js');
 const {
@@ -58,9 +58,13 @@ app.use(
   '/api/booking/webhook',
   express.raw({ type: 'application/json' }),
   (req, res, next) => {
-    req.rawBody = req.body;
-    req.body = JSON.parse(req.body.toString());
-    next();
+    try {
+      req.rawBody = req.body;
+      req.body = JSON.parse(req.body.toString());
+      next();
+    } catch (error) {
+      return res.status(400).json({ error: 'Invalid JSON payload' });
+    }
   }
 );
 
@@ -85,11 +89,12 @@ app.get('/', (req, res) => {
 const startServer = async () => {
   try {
     await createRegionTable();
+    await createUserTable();
     await createCinemaTable();
     await createScreensTypeTable();
     await createScreensTable();
     await createMoviesTable();
-    await createGenereTable();
+    await createGenreTable();
     await createGenreMovieTable();
     await createShowsTable();
     await createSeatCategoriesTable();
@@ -97,7 +102,6 @@ const startServer = async () => {
     await createShowSeatsTable();
     await createBookingTable();
     await createBookingSeatsTable();
-    await createUserTable();
 
     setInterval(releaseExpiredReservations, 60 * 1000);
 

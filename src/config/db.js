@@ -15,6 +15,10 @@ pool.on('connect', () => {
     console.log('Connected to the PostgreSQL database');
 });
 
+pool.on('error', (err) => {
+    console.error('Unexpected PostgreSQL pool error:', err);
+});
+
 module.exports = {
     query: (text, params) => pool.query(text, params),
     pool,
