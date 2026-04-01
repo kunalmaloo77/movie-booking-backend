@@ -1,94 +1,84 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { createUser, findUserByEmailOrUsername } = require('../models/userModel.js');
+const AppError = require('../utils/AppError.js');
+const ApiResponse = require('../utils/ApiResponse.js');
 
 const register = async (req, res) => {
-    const { username, email, password } = req.body;
+  const { username, email, password } = req.body;
 
-    if (!username || !email || !password) {
-        return res.status(400).json({ message: 'Please provide all fields' });
-    }
+  if (!username || !email || !password) {
+    throw new AppError('VALIDATION_ERROR', 'Please provide all fields', 400);
+  }
 
-    try {
-        // Check if user already exists
-        const existingUser = await findUserByEmailOrUsername(email, username);
-        if (existingUser) {
-            return res.status(400).json({ message: 'User already exists' });
-        }
+  const existingUser = await findUserByEmailOrUsername(email, username);
+  if (existingUser) {
+    throw new AppError('DUPLICATE_ENTRY', 'User already exists', 409);
+  }
 
-        // Hash password
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(password, salt);
 
-        // Create user
-        const newUser = await createUser(username, email, hashedPassword);
+  const newUser = await createUser(username, email, hashedPassword);
 
-        // Generate JWT: 1hr
-        const token = jwt.sign(
-            { id: newUser.id, username: newUser.username, role: newUser.role },
-            process.env.JWT_SECRET,
-            { expiresIn: '1h' }
-        );
+  const token = jwt.sign(
+    { id: newUser.id, username: newUser.username, role: newUser.role },
+    process.env.JWT_SECRET,
+    { expiresIn: '1h' }
+  );
 
-        res.status(201).json({
-            message: 'User registered successfully',
-            user: {
-                id: newUser.id,
-                username: newUser.username,
-                email: newUser.email,
-                created_at: newUser.created_at
-            },
-            token
-        });
-    } catch (error) {
-        console.error('Registration error:', error);
-        res.status(500).json({ message: 'Server error' });
-    }
+  ApiResponse.success(res, {
+    data: {
+      user: {
+        id: newUser.id,
+        username: newUser.username,
+        email: newUser.email,
+        created_at: newUser.created_at,
+      },
+      token,
+    },
+    message: 'User registered successfully',
+    statusCode: 201,
+  });
 };
 
 const login = async (req, res) => {
-    const { email, password } = req.body || {};
+  const { email, password } = req.body || {};
 
-    if (!email || !password) {
-        return res.status(400).json({ message: 'Please provide email and password' });
-    }
+  if (!email || !password) {
+    throw new AppError('VALIDATION_ERROR', 'Please provide email and password', 400);
+  }
 
-    try {
-        // Check if user exists
-        const user = await findUserByEmailOrUsername(email);
-        if (!user) {
-            return res.status(400).json({ message: 'Invalid credentials' });
-        }
+  const user = await findUserByEmailOrUsername(email);
+  if (!user) {
+    throw new AppError('INVALID_CREDENTIALS', 'Invalid credentials', 401);
+  }
 
-        // Validate password
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            return res.status(400).json({ message: 'Invalid credentials' });
-        }
+  const isMatch = await bcrypt.compare(password, user.password);
+  if (!isMatch) {
+    throw new AppError('INVALID_CREDENTIALS', 'Invalid credentials', 401);
+  }
 
-        // Generate JWT
-        const token = jwt.sign(
-            { id: user.id, username: user.username },
-            process.env.JWT_SECRET,
-            { expiresIn: '1h' }
-        );
+  const token = jwt.sign(
+    { id: user.id, username: user.username, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: '1h' }
+  );
 
-        res.json({
-            message: 'Login successful',
-            user: {
-                id: user.id,
-                username: user.username,
-                email: user.email
-            },
-            token
-        });
-    } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ message: 'Server error' });
-    }
+  ApiResponse.success(res, {
+    data: {
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+      },
+      token,
+    },
+    message: 'Login successful',
+  });
 };
 
 module.exports = {
-    register,
-    login,
+  register,
+  login,
 };

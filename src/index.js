@@ -3,6 +3,9 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const Razorpay = require('razorpay');
 
+const errorHandler = require('./middleware/errorHandler.js');
+const AppError = require('./utils/AppError.js');
+
 const authRoutes = require('./routes/authRoutes.js');
 const regionRoutes = require('./routes/regionRoutes.js');
 const cinemaRoutes = require('./routes/cinemaRoutes.js');
@@ -27,8 +30,6 @@ const {
 } = require('./models/moviesModel.js');
 const {
   createShowsTable,
-  createSeatCategoriesTable,
-  createSeatsTable,
   createShowSeatsTable,
 } = require('./models/showsModel.js');
 const {
@@ -36,6 +37,11 @@ const {
   createBookingTable,
   releaseExpiredReservations,
 } = require('./models/bookingModel.js');
+
+const {
+  createSeatsTable,
+  createSeatCategoriesTable,
+} = require('./models/seatModel.js');
 
 const db = require('./config/db.js');
 
@@ -58,9 +64,13 @@ app.use(
   '/api/booking/webhook',
   express.raw({ type: 'application/json' }),
   (req, res, next) => {
-    req.rawBody = req.body;
-    req.body = JSON.parse(req.body.toString());
-    next();
+    try {
+      req.rawBody = req.body;
+      req.body = JSON.parse(req.body.toString());
+      next();
+    } catch (error) {
+      return next(new AppError('BAD_REQUEST', 'Invalid JSON payload', 400));
+    }
   }
 );
 
@@ -81,6 +91,9 @@ app.use('/api/booking', bookingRoutes);
 app.get('/', (req, res) => {
   res.send('API is running...');
 });
+
+// Centralized error handler — must be registered after all routes
+app.use(errorHandler);
 
 const startServer = async () => {
   try {

@@ -82,13 +82,13 @@ const findCinemaByMovieIdAndRegionId = async (region_id, movie_id) => {
     cinemas.cinema_code,
     cinemas.address,
     shows.id as show_id,
-    shows.show_time,
+    shows.start_time,
     shows.movie_id
-    FROM cinemas 
+    FROM cinemas
     JOIN screens ON cinemas.id = screens.cinema_id
-    JOIN shows ON screens.id = shows.screen_id 
+    JOIN shows ON screens.id = shows.screen_id
     WHERE cinemas.region_id = $1 AND shows.movie_id = $2
-    ORDER BY shows.show_time`;
+    ORDER BY shows.start_time`;
     const result = await db.query(queryText, [region_id, movie_id]);
     return result.rows;
   } catch (error) {

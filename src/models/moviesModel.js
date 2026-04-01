@@ -1,11 +1,11 @@
 const db = require('../config/db');
 const PAGE_LIMIT = 20;
 
-const createGenereTable = async () => {
+const createGenreTable = async () => {
   const queryText = `
     CREATE TABLE IF NOT EXISTS genres (
         id SERIAL PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
+        name VARCHAR(100) UNIQUE NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
     `;
@@ -24,7 +24,7 @@ const getMoviesFromRegion = async (region_id) => {
           FROM movies m
           JOIN genre_movies gm ON m.id = gm.movie_id
           JOIN genres g ON gm.genre_id = g.id
-          JOIN shows s ON m.id = s.movie_id AND s.show_date > CURRENT_DATE
+          JOIN shows s ON m.id = s.movie_id AND s.start_time::date > CURRENT_DATE
           JOIN screens sc ON s.screen_id = sc.id
           JOIN cinemas c ON sc.cinema_id = c.id
           WHERE c.region_id = $1
@@ -43,7 +43,8 @@ const createGenreMovieTable = async () => {
         id serial primary key,
         genre_id int not null references genres(id),
         movie_id int not null references movies(id),
-        created_at timestamp with time zone default current_timestamp
+        created_at timestamp with time zone default current_timestamp,
+        UNIQUE (genre_id, movie_id)
     );
     `;
   try {
@@ -160,7 +161,6 @@ const upsertGenre = async (id, name) => {
 
 const createGenreMovie = async (genre_id, movie_id) => {
   const queryText = `
-    id SERIAL PRIMARY KEY,
     INSERT INTO genre_movies (genre_id, movie_id)
     VALUES ($1, $2)
     RETURNING id, genre_id, movie_id, created_at;
@@ -168,6 +168,22 @@ const createGenreMovie = async (genre_id, movie_id) => {
   const values = [genre_id, movie_id];
   const result = await db.query(queryText, values);
   return result.rows[0];
+};
+
+const batchCreateGenreMovies = async (genre_ids, movie_id) => {
+  if (!genre_ids || genre_ids.length === 0) return;
+  const values = [];
+  const placeholders = genre_ids.map((genre_id, i) => {
+    const base = i * 2;
+    values.push(genre_id, movie_id);
+    return `($${base + 1}, $${base + 2})`;
+  });
+  const queryText = `
+    INSERT INTO genre_movies (genre_id, movie_id)
+    VALUES ${placeholders.join(', ')}
+    ON CONFLICT (genre_id, movie_id) DO NOTHING;
+  `;
+  await db.query(queryText, values);
 };
 
 const fetchMovies = async (search = null, page = 1) => {
@@ -336,7 +352,7 @@ const getTMDBIdByMovieId = async (movie_id) => {
 };
 
 module.exports = {
-  createGenereTable,
+  createGenreTable,
   fetchGenres,
   createGenreMovieTable,
   createMoviesTable,
@@ -344,6 +360,7 @@ module.exports = {
   createGenre,
   upsertGenre,
   createGenreMovie,
+  batchCreateGenreMovies,
   fetchMovies,
   batchInsertMovies,
   updateMovieRuntime,

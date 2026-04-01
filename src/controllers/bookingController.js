@@ -2,44 +2,60 @@ const crypto = require('crypto');
 const {
   createBooking,
   confirmBooking,
+  failBooking,
   fetchBookingsByUserId,
 } = require('../models/bookingModel.js');
+const AppError = require('../utils/AppError.js');
+const ApiResponse = require('../utils/ApiResponse.js');
+const { findShowSeatIds } = require('../models/showsModel.js');
 
 const createNewBooking = async (req, res) => {
   const { show_id, seat_ids } = req.body;
   const user_id = req.user.id;
 
-  if (!show_id || !seat_ids || !Array.isArray(seat_ids) || seat_ids.length === 0) {
-    return res.status(400).json({ error: 'Missing or invalid required fields' });
+  if (
+    !show_id ||
+    !seat_ids ||
+    !Array.isArray(seat_ids) ||
+    seat_ids.length === 0
+  ) {
+    throw new AppError('VALIDATION_ERROR', 'Missing or invalid required fields', 400);
   }
 
+  const razorpayInstance = req.app.get('razorpay');
   try {
-    const razorpayInstance = req.app.get('razorpay');
-    const result = await createBooking(user_id, show_id, seat_ids, razorpayInstance);
+    const show_seat_ids = await findShowSeatIds(show_id, seat_ids);
+    const result = await createBooking(
+      user_id,
+      show_id,
+      show_seat_ids,
+      razorpayInstance
+    );
 
-    res.status(201).json({
+    ApiResponse.success(res, {
+      data: {
+        bookingId: result.bookingId,
+        razorpayOrderId: result.razorpayOrderId,
+        amount: result.amount,
+        currency: result.currency,
+        reservedUntil: result.reservedUntil,
+      },
       message: 'Booking initiated. Complete payment to confirm.',
-      bookingId: result.bookingId,
-      razorpayOrderId: result.razorpayOrderId,
-      amount: result.amount,
-      currency: result.currency,
-      reservedUntil: result.reservedUntil,
+      statusCode: 201,
     });
-  } catch (error) {
-    console.error('Error creating booking:', error);
-    if (error.statusCode === 409) {
-      return res.status(409).json({ error: error.message });
-    }
-    res.status(500).json({ error: 'Failed to create booking' });
+  } catch (err) {
+    console.error('BOOKING ERROR:', err);
+    throw new AppError('BOOKING', 'Something went wrong while creating booking', 500);
   }
 };
 
 // Public endpoint — secured by Razorpay signature, no JWT needed
 const verifyBookingPayment = async (req, res) => {
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } =
+    req.body;
 
   if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-    return res.status(400).json({ error: 'Missing payment verification fields' });
+    throw new AppError('VALIDATION_ERROR', 'Missing payment verification fields', 400);
   }
 
   // Verify Razorpay signature
@@ -49,25 +65,22 @@ const verifyBookingPayment = async (req, res) => {
     .digest('hex');
 
   if (expectedSignature !== razorpay_signature) {
-    return res.status(400).json({ error: 'Invalid payment signature' });
+    throw new AppError('BAD_REQUEST', 'Invalid payment signature', 400);
   }
 
-  try {
-    const bookingId = await confirmBooking(razorpay_order_id, razorpay_payment_id);
-    res.status(200).json({ message: 'Payment verified. Booking confirmed.', bookingId });
-  } catch (error) {
-    console.error('Error confirming booking:', error);
-    if (error.statusCode === 404) {
-      return res.status(404).json({ error: error.message });
-    }
-    if (error.statusCode === 410) {
-      return res.status(410).json({ error: error.message });
-    }
-    res.status(500).json({ error: 'Failed to confirm booking' });
-  }
+  const bookingId = await confirmBooking(
+    razorpay_order_id,
+    razorpay_payment_id
+  );
+
+  ApiResponse.success(res, {
+    data: { bookingId },
+    message: 'Payment verified. Booking confirmed.',
+  });
 };
 
 // Public endpoint — called by Razorpay servers, secured by webhook signature
+// Must always return 200 to Razorpay to prevent retries
 const razorpayWebhook = async (req, res) => {
   const webhookSignature = req.headers['x-razorpay-signature'];
   const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
@@ -78,7 +91,11 @@ const razorpayWebhook = async (req, res) => {
     .digest('hex');
 
   if (expectedSignature !== webhookSignature) {
-    return res.status(400).json({ error: 'Invalid webhook signature' });
+    return ApiResponse.error(res, {
+      code: 'BAD_REQUEST',
+      message: 'Invalid webhook signature',
+      statusCode: 400,
+    });
   }
 
   const { event, payload } = req.body;
@@ -91,7 +108,6 @@ const razorpayWebhook = async (req, res) => {
       // Already confirmed by client-side verify — idempotent, safe to ignore
       if (error.statusCode !== 410 && error.statusCode !== 404) {
         console.error('Webhook confirmBooking error:', error);
-        return res.status(500).json({ error: 'Webhook processing failed' });
       }
     }
   }
@@ -99,28 +115,26 @@ const razorpayWebhook = async (req, res) => {
   if (event === 'payment.failed') {
     const { order_id } = payload.payment.entity;
     try {
-      await req.app.get('db').query(
-        `UPDATE bookings SET status = 'PAYMENT_FAILED' WHERE razorpay_order_id = $1 AND status = 'CREATED'`,
-        [order_id]
-      );
+      await failBooking(order_id);
     } catch (error) {
       console.error('Webhook payment.failed error:', error);
     }
   }
 
   // Always respond 200 to Razorpay so it doesn't retry
-  res.status(200).json({ received: true });
+  ApiResponse.success(res, { data: { received: true } });
 };
 
 const getBookingsByUserId = async (req, res) => {
   const { user_id } = req.params;
-  try {
-    const bookings = await fetchBookingsByUserId(user_id);
-    res.status(200).json({ bookings });
-  } catch (error) {
-    console.error('Error fetching bookings:', error);
-    res.status(500).json({ error: 'Failed to fetch bookings' });
+
+  // Users can only view their own bookings
+  if (Number.parseInt(user_id, 10) !== req.user.id) {
+    throw new AppError('FORBIDDEN', 'Access denied', 403);
   }
+
+  const bookings = await fetchBookingsByUserId(user_id);
+  ApiResponse.success(res, { data: bookings });
 };
 
 module.exports = {

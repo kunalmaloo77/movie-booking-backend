@@ -6,8 +6,7 @@ const createShowsTable = async () => {
         id SERIAL PRIMARY KEY,
         movie_id INT NOT NULL REFERENCES movies(id),
         screen_id INT NOT NULL REFERENCES screens(id),
-        show_date DATE NOT NULL,
-        show_time TIME NOT NULL,
+        start_time TIMESTAMP WITH TIME ZONE NOT NULL,
         language VARCHAR(50) NOT NULL DEFAULT 'English',
         status VARCHAR(20) NOT NULL DEFAULT 'active',
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -22,152 +21,57 @@ const createShowsTable = async () => {
 };
 
 const createShow = async (
+  client,
   movie_id,
   screen_id,
-  show_date,
-  show_time,
+  start_time,
   language = 'English'
 ) => {
   const queryText = `
-    INSERT INTO shows (movie_id, screen_id, show_date, show_time, language)
-    VALUES ($1, $2, $3, $4, $5)
-    RETURNING id, movie_id, screen_id, show_date, show_time, language, created_at;
+    INSERT INTO shows (movie_id, screen_id, start_time, language)
+    VALUES ($1, $2, $3, $4)
+    RETURNING id, movie_id, screen_id, start_time, language, created_at;
   `;
-  const values = [movie_id, screen_id, show_date, show_time, language];
-  const result = await db.query(queryText, values);
+  const values = [movie_id, screen_id, start_time, language];
+  const result = await client.query(queryText, values);
   return result.rows[0];
 };
 
+
 const findShowsByScreenId = async (screen_id) => {
   const queryText =
-    'SELECT * FROM shows WHERE screen_id = $1 ORDER BY show_date, show_time';
+    'SELECT * FROM shows WHERE screen_id = $1 ORDER BY start_time';
   const result = await db.query(queryText, [screen_id]);
   return result.rows;
 };
 
 const findShowsByMovieId = async (movie_id) => {
   const queryText =
-    'SELECT * FROM shows WHERE movie_id = $1 ORDER BY show_date, show_time';
+    'SELECT * FROM shows WHERE movie_id = $1 ORDER BY start_time';
   const result = await db.query(queryText, [movie_id]);
   return result.rows;
 };
 
-// Returns any existing show on the same screen+date whose runtime window overlaps
-// with [show_time, show_time + runtime_minutes).
-const findOverlappingShows = async (
-  screen_id,
-  show_date,
-  show_time,
-  runtime_minutes
-) => {
+// Returns any existing show on the same screen whose runtime window overlaps
+// with [start_time, start_time + runtime_minutes).
+const findOverlappingShows = async (screen_id, start_time, runtime_minutes) => {
   const queryText = `
-    SELECT s.id, s.show_time, m.title, m.runtime
+    SELECT s.id, s.start_time, m.title, m.runtime
     FROM shows s
     JOIN movies m ON s.movie_id = m.id
     WHERE s.screen_id = $1
-      AND s.show_date = $2
       AND s.status != 'cancelled'
       AND (
-        s.show_time < ($3::time + ($4 || ' minutes')::interval)
-        AND (s.show_time + (m.runtime || ' minutes')::interval) > $3::time
+        s.start_time < ($2::timestamptz + ($3 || ' minutes')::interval)
+        AND (s.start_time + (m.runtime || ' minutes')::interval) > $2::timestamptz
       )
     LIMIT 1;
   `;
   const result = await db.query(queryText, [
     screen_id,
-    show_date,
-    show_time,
+    start_time,
     runtime_minutes,
   ]);
-  return result.rows;
-};
-
-const createSeatCategoriesTable = async () => {
-  const queryText = `
-    CREATE TABLE IF NOT EXISTS seat_categories (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(50) NOT NULL,
-        description VARCHAR(255) NOT NULL
-    );
-    `;
-  try {
-    await db.query(queryText);
-    console.log('Seat categories table created successfully');
-  } catch (error) {
-    console.error('Error creating seat categories table:', error);
-  }
-};
-
-const createSeatCategory = async (name, description) => {
-  try {
-    const queryText = `
-      INSERT INTO seat_categories (name, description)
-      VALUES ($1, $2)
-      RETURNING id, name, description;
-    `;
-    const values = [name, description];
-    const result = await db.query(queryText, values);
-    return result.rows[0];
-  } catch (error) {
-    console.error('Error creating seat category:', error);
-    throw new Error('Failed to create seat category');
-  }
-};
-
-const createSeatsTable = async () => {
-  const queryText = `
-    CREATE TABLE IF NOT EXISTS seats (
-        id SERIAL PRIMARY KEY,
-        row_label VARCHAR(5) NOT NULL,
-        column_label INT NOT NULL,
-        screen_id INT NOT NULL REFERENCES screens(id),
-        category_id INT NOT NULL REFERENCES seat_categories(id),
-        UNIQUE (row_label, column_label, screen_id)
-    );
-    `;
-  try {
-    await db.query(queryText);
-    console.log('Seats table created successfully');
-  } catch (error) {
-    console.error('Error creating seats table:', error);
-  }
-};
-
-const createSeat = async (row_label, column_label, screen_id, category_id) => {
-  try {
-    const queryText = `
-      INSERT INTO seats (row_label, column_label, screen_id, category_id)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, row_label, column_label, screen_id, category_id;
-    `;
-    const values = [row_label, column_label, screen_id, category_id];
-    const result = await db.query(queryText, values);
-    return result.rows[0];
-  } catch (error) {
-    console.error('Error creating seat:', error);
-    throw new Error('Failed to create seat');
-  }
-};
-
-const findSeatsByScreenId = async (screen_id) => {
-  const queryText = `
-    SELECT s.id, s.row_label, s.column_label, s.category_id
-    FROM seats s
-    WHERE s.screen_id = $1
-    ORDER BY s.row_label, s.column_label;
-  `;
-  const result = await db.query(queryText, [screen_id]);
-  return result.rows;
-};
-
-const findSeatsByShowId = async (show_id) => {
-  const queryText = `
-    SELECT s.id, s.row_label, s.column_label, s.category_id, ss.status, ss.price
-    FROM seats s
-    LEFT JOIN show_seats ss ON s.id = ss.seat_id AND ss.show_id = $1
-    ORDER BY s.row_label, s.column_label;
-  `;
-  const result = await db.query(queryText, [show_id]);
   return result.rows;
 };
 
@@ -179,7 +83,9 @@ const createShowSeatsTable = async () => {
         seat_id INT NOT NULL REFERENCES seats(id) ON DELETE CASCADE,
         status VARCHAR(20) NOT NULL DEFAULT 'available',
         price DECIMAL(10, 2) NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        reserved_until TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (show_id, seat_id)
     );
     `;
   try {
@@ -201,28 +107,39 @@ const createShowSeat = async (show_id, seat_id, price) => {
   return result.rows[0];
 };
 
-const getSeatCategoriesByScreenId = async (screen_id) => {
+const findShowSeatIds = async (show_id, seat_ids) => {
   const queryText = `
-    SELECT DISTINCT sc.id, sc.name, sc.description FROM seats s 
-    JOIN seat_categories sc ON s.category_id = sc.id 
-    WHERE s.screen_id = $1 ORDER BY sc.id`;
-  const result = await db.query(queryText, [screen_id]);
+    SELECT id FROM show_seats WHERE show_id = $1 AND seat_id = ANY($2);
+  `;
+  const result = await db.query(queryText, [show_id, seat_ids]);
+  return result.rows.map(row => row.id);
+}
+
+const batchCreateShowSeats = async (client, show_id, seatPriceRows) => {
+  if (seatPriceRows.length === 0) return [];
+  const values = [];
+  const placeholders = seatPriceRows.map((row, i) => {
+    const base = i * 3;
+    values.push(show_id, row.seat_id, row.price);
+    return `($${base + 1}, $${base + 2}, $${base + 3})`;
+  });
+  const queryText = `
+    INSERT INTO show_seats (show_id, seat_id, price)
+    VALUES ${placeholders.join(', ')}
+    RETURNING id, show_id, seat_id, price;
+  `;
+  const result = await client.query(queryText, values);
   return result.rows;
 };
 
 module.exports = {
-  createSeat,
-  findSeatsByScreenId,
-  findSeatsByShowId,
   createShowsTable,
   createShow,
   findShowsByScreenId,
   findShowsByMovieId,
   findOverlappingShows,
-  createSeatsTable,
-  createSeatCategoriesTable,
   createShowSeatsTable,
-  createSeatCategory,
   createShowSeat,
-  getSeatCategoriesByScreenId,
+  batchCreateShowSeats,
+  findShowSeatIds,
 };

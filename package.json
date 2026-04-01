@@ -7,7 +7,8 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "create-admin": "node src/scripts/createAdmin.js"
+    "create-admin": "node src/scripts/createAdmin.js",
+    "migrate": "node-pg-migrate"
   },
   "keywords": [],
   "author": "",
@@ -22,6 +23,7 @@
     "razorpay": "^2.9.6"
   },
   "devDependencies": {
+    "node-pg-migrate": "^8.0.4",
     "nodemon": "^3.1.11"
   }
 }
