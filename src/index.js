@@ -25,7 +25,7 @@ const {
 } = require('./models/screenModel.js');
 const {
   createMoviesTable,
-  createGenereTable,
+  createGenreTable,
   createGenreMovieTable,
 } = require('./models/moviesModel.js');
 const {
@@ -98,11 +98,12 @@ app.use(errorHandler);
 const startServer = async () => {
   try {
     await createRegionTable();
+    await createUserTable();
     await createCinemaTable();
     await createScreensTypeTable();
     await createScreensTable();
     await createMoviesTable();
-    await createGenereTable();
+    await createGenreTable();
     await createGenreMovieTable();
     await createShowsTable();
     await createSeatCategoriesTable();
@@ -110,7 +111,6 @@ const startServer = async () => {
     await createShowSeatsTable();
     await createBookingTable();
     await createBookingSeatsTable();
-    await createUserTable();
 
     setInterval(releaseExpiredReservations, 60 * 1000);
 
