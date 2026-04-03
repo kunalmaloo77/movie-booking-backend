@@ -17,6 +17,32 @@ const createGenreTable = async () => {
   }
 };
 
+const createMoviesTable = async () => {
+  const queryText = `
+    CREATE TABLE IF NOT EXISTS movies (
+        id SERIAL PRIMARY KEY,
+        source VARCHAR(10) NOT NULL DEFAULT 'manual' CHECK (source IN ('manual', 'tmdb')),
+        tmdb_id INT UNIQUE,
+        title VARCHAR(100) NOT NULL,
+        rating DECIMAL(3,1) NOT NULL,
+        language VARCHAR(100) NOT NULL,
+        adult BOOLEAN NOT NULL,
+        runtime INT,
+        release_date DATE NOT NULL,
+        poster_image_url VARCHAR(255) NOT NULL,
+        backdrop_image_url VARCHAR(255) NOT NULL,
+        overview TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    `;
+  try {
+    await db.query(queryText);
+    console.log('Movies table created successfully');
+  } catch (error) {
+    console.error('Error creating movies table:', error);
+  }
+};
+
 const getMoviesFromRegion = async (region_id) => {
   try {
     const queryText = `
@@ -52,32 +78,6 @@ const createGenreMovieTable = async () => {
     console.log('Genre movies table created successfully');
   } catch (error) {
     console.error('Error creating genre movies table:', error);
-  }
-};
-
-const createMoviesTable = async () => {
-  const queryText = `
-    CREATE TABLE IF NOT EXISTS movies (
-        id SERIAL PRIMARY KEY,
-        source VARCHAR(10) NOT NULL DEFAULT 'manual' CHECK (source IN ('manual', 'tmdb')),
-        tmdb_id INT UNIQUE,
-        title VARCHAR(100) NOT NULL,
-        rating DECIMAL(3,1) NOT NULL,
-        language VARCHAR(100) NOT NULL,
-        adult BOOLEAN NOT NULL,
-        runtime INT,
-        release_date DATE NOT NULL,
-        poster_image_url VARCHAR(255) NOT NULL,
-        backdrop_image_url VARCHAR(255) NOT NULL,
-        overview TEXT,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );
-    `;
-  try {
-    await db.query(queryText);
-    console.log('Movies table created successfully');
-  } catch (error) {
-    console.error('Error creating movies table:', error);
   }
 };
 
@@ -227,91 +227,156 @@ const fetchMovies = async (search = null, page = 1) => {
  * Uses parameterized queries to prevent SQL injection and improve performance.
  */
 
-const batchInsertMovies = async (movies) => {
-  if (movies.length === 0) return;
+const buildMovieValues = (movie) => [
+  movie.title,
+  'tmdb',
+  movie.id,
+  movie.vote_average,
+  movie.original_language,
+  movie.adult,
+  movie.release_date,
+  movie.poster_path,
+  movie.backdrop_path,
+  movie.overview,
+];
 
-  const client = await db.pool.connect();
-  try {
-    await client.query('BEGIN');
+const insertGenrePairs = async (client, pairs) => {
+  if (!pairs.length) {
+    return;
+  }
 
-    const values = [];
-    const placeholders = movies.map((movie, i) => {
-      const base = i * 10;
-      values.push(
-        movie.title,
-        'tmdb',
-        movie.id,
-        movie.vote_average,
-        movie.original_language,
-        movie.adult,
-        movie.release_date,
-        movie.poster_path,
-        movie.backdrop_path,
-        movie.overview
-      );
-      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10})`;
-    });
+  const genreValues = [];
+  const genrePlaceholders = pairs.map(([movieId, genreId], index) => {
+    const base = index * 2;
+    genreValues.push(movieId, genreId);
+    return `($${base + 1}, $${base + 2})`;
+  });
 
-    const movieQueryText = `
-      INSERT INTO movies (title, source, tmdb_id, rating, language, adult, release_date, poster_image_url, backdrop_image_url, overview)
-      VALUES ${placeholders.join(', ')}
-      ON CONFLICT (tmdb_id) DO UPDATE SET
-        title = EXCLUDED.title,
-        source = EXCLUDED.source,
-        rating = EXCLUDED.rating,
-        language = EXCLUDED.language,
-        adult = EXCLUDED.adult,
-        release_date = EXCLUDED.release_date,
-        poster_image_url = EXCLUDED.poster_image_url,
-        backdrop_image_url = EXCLUDED.backdrop_image_url,
-        overview = EXCLUDED.overview
-      RETURNING id, tmdb_id
-    `;
+  const genreQueryText = `
+    INSERT INTO genre_movies (movie_id, genre_id)
+    VALUES ${genrePlaceholders.join(', ')}
+    ON CONFLICT DO NOTHING
+  `;
 
-    const movieResult = await client.query(movieQueryText, values);
+  await client.query(genreQueryText, genreValues);
+};
 
-    // Map tmdb_id -> db id from returned rows
-    const tmdbIdToDbId = {};
-    movieResult.rows.forEach((row) => {
-      tmdbIdToDbId[row.tmdb_id] = row.id;
-    });
+const insertMovieBatch = async (client, movies) => {
+  const values = [];
+  const placeholders = movies.map((movie, index) => {
+    const base = index * 10;
+    values.push(...buildMovieValues(movie));
+    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10})`;
+  });
 
-    // Build (movie_id, genre_id) pairs per movie using its returned db id
-    const genrePairs = [];
-    movies.forEach((movie) => {
-      if (movie.genre_ids && Array.isArray(movie.genre_ids)) {
-        const dbId = tmdbIdToDbId[movie.id];
-        if (dbId) {
-          movie.genre_ids.forEach((genre_id) =>
-            genrePairs.push([dbId, genre_id])
-          );
-        }
-      }
-    });
+  const movieQueryText = `
+    INSERT INTO movies (title, source, tmdb_id, rating, language, adult, release_date, poster_image_url, backdrop_image_url, overview)
+    VALUES ${placeholders.join(', ')}
+    ON CONFLICT (tmdb_id) DO UPDATE SET
+      title = EXCLUDED.title,
+      source = EXCLUDED.source,
+      rating = EXCLUDED.rating,
+      language = EXCLUDED.language,
+      adult = EXCLUDED.adult,
+      release_date = EXCLUDED.release_date,
+      poster_image_url = EXCLUDED.poster_image_url,
+      backdrop_image_url = EXCLUDED.backdrop_image_url,
+      overview = EXCLUDED.overview
+    RETURNING id, tmdb_id
+  `;
 
-    if (genrePairs.length > 0) {
-      const genreValues = [];
-      const genrePlaceholders = genrePairs.map((pair, i) => {
-        const base = i * 2;
-        genreValues.push(pair[0], pair[1]);
-        return `($${base + 1}, $${base + 2})`;
-      });
+  const movieResult = await client.query(movieQueryText, values);
+  const tmdbIdToDbId = {};
+  movieResult.rows.forEach((row) => {
+    tmdbIdToDbId[row.tmdb_id] = row.id;
+  });
 
-      const genreQueryText = `
-        INSERT INTO genre_movies (movie_id, genre_id)
-        VALUES ${genrePlaceholders.join(', ')}
-        ON CONFLICT DO NOTHING
-      `;
-
-      await client.query(genreQueryText, genreValues);
+  const genrePairs = [];
+  movies.forEach((movie) => {
+    const dbMovieId = tmdbIdToDbId[movie.id];
+    if (!dbMovieId || !Array.isArray(movie.genre_ids)) {
+      return;
     }
 
-    await client.query('COMMIT');
-    console.log(`Inserted ${movies.length} movies`);
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Error batch inserting movies:', error);
-    throw error;
+    movie.genre_ids.forEach((genreId) => {
+      genrePairs.push([dbMovieId, genreId]);
+    });
+  });
+
+  await insertGenrePairs(client, genrePairs);
+};
+
+const insertSingleMovie = async (client, movie) => {
+  const movieQueryText = `
+    INSERT INTO movies (title, source, tmdb_id, rating, language, adult, release_date, poster_image_url, backdrop_image_url, overview)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    ON CONFLICT (tmdb_id) DO UPDATE SET
+      title = EXCLUDED.title,
+      source = EXCLUDED.source,
+      rating = EXCLUDED.rating,
+      language = EXCLUDED.language,
+      adult = EXCLUDED.adult,
+      release_date = EXCLUDED.release_date,
+      poster_image_url = EXCLUDED.poster_image_url,
+      backdrop_image_url = EXCLUDED.backdrop_image_url,
+      overview = EXCLUDED.overview
+    RETURNING id, tmdb_id
+  `;
+
+  const movieResult = await client.query(movieQueryText, buildMovieValues(movie));
+  const dbMovieId = movieResult.rows[0]?.id;
+
+  if (dbMovieId && Array.isArray(movie.genre_ids) && movie.genre_ids.length > 0) {
+    const genrePairs = movie.genre_ids.map((genreId) => [dbMovieId, genreId]);
+    await insertGenrePairs(client, genrePairs);
+  }
+};
+
+const batchInsertMovies = async (movies) => {
+  if (movies.length === 0) {
+    return { total: 0, inserted: 0, failed: 0 };
+  }
+
+  const client = await db.pool.connect();
+
+  try {
+    try {
+      await client.query('BEGIN');
+      await insertMovieBatch(client, movies);
+      await client.query('COMMIT');
+      console.log(`Movie import summary: ${movies.length} succeeded, 0 failed, ${movies.length} total`);
+      return { total: movies.length, inserted: movies.length, failed: 0 };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error(
+        `Bulk import failed for ${movies.length} movies. Falling back to per-movie insert:`,
+        error.message
+      );
+    }
+
+    let inserted = 0;
+    let failed = 0;
+
+    for (const movie of movies) {
+      try {
+        await client.query('BEGIN');
+        await insertSingleMovie(client, movie);
+        await client.query('COMMIT');
+        inserted++;
+      } catch (error) {
+        failed++;
+        await client.query('ROLLBACK');
+        console.error(
+          `Failed to import movie "${movie.title}" (tmdb_id: ${movie.id}):`,
+          error.message
+        );
+      }
+    }
+
+    console.log(
+      `Movie import summary: ${inserted} succeeded, ${failed} failed, ${movies.length} total`
+    );
+    return { total: movies.length, inserted, failed };
   } finally {
     client.release();
   }

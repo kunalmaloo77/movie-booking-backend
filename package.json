@@ -7,8 +7,9 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "create-admin": "node src/scripts/createAdmin.js",
-    "migrate": "node-pg-migrate"
+    "create-admin": "node scripts/createAdmin.js",
+    "migrate": "node-pg-migrate",
+    "movie-seed": "node scripts/movieDump.js"
   },
   "keywords": [],
   "author": "",

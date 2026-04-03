@@ -37,7 +37,6 @@ const createShow = async (
   return result.rows[0];
 };
 
-
 const findShowsByScreenId = async (screen_id) => {
   const queryText =
     'SELECT * FROM shows WHERE screen_id = $1 ORDER BY start_time';
@@ -54,7 +53,12 @@ const findShowsByMovieId = async (movie_id) => {
 
 // Returns any existing show on the same screen whose runtime window overlaps
 // with [start_time, start_time + runtime_minutes).
-const findOverlappingShows = async (screen_id, start_time, runtime_minutes) => {
+const findOverlappingShows = async (
+  client,
+  screen_id,
+  start_time,
+  runtime_minutes
+) => {
   const queryText = `
     SELECT s.id, s.start_time, m.title, m.runtime
     FROM shows s
@@ -67,7 +71,7 @@ const findOverlappingShows = async (screen_id, start_time, runtime_minutes) => {
       )
     LIMIT 1;
   `;
-  const result = await db.query(queryText, [
+  const result = await client.query(queryText, [
     screen_id,
     start_time,
     runtime_minutes,
@@ -112,8 +116,8 @@ const findShowSeatIds = async (show_id, seat_ids) => {
     SELECT id FROM show_seats WHERE show_id = $1 AND seat_id = ANY($2);
   `;
   const result = await db.query(queryText, [show_id, seat_ids]);
-  return result.rows.map(row => row.id);
-}
+  return result.rows.map((row) => row.id);
+};
 
 const batchCreateShowSeats = async (client, show_id, seatPriceRows) => {
   if (seatPriceRows.length === 0) return [];

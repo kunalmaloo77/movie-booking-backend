@@ -6,8 +6,10 @@ const {
   findOverlappingShows,
 } = require('../models/showsModel.js');
 
-const { findSeatsByScreenId, findSeatsByShowId } = require('../models/seatModel.js');
-
+const {
+  findSeatsByScreenId,
+  findSeatsByShowId,
+} = require('../models/seatModel.js');
 
 const {
   fetchAndUpdateMovieRuntime,
@@ -20,14 +22,23 @@ const AppError = require('../utils/AppError.js');
 const ApiResponse = require('../utils/ApiResponse.js');
 const db = require('../config/db.js');
 
-const createShowSeatByScreenId = async (client, show_id, screen_id, category_price) => {
+const createShowSeatByScreenId = async (
+  client,
+  show_id,
+  screen_id,
+  category_price
+) => {
   const seats = await findSeatsByScreenId(screen_id);
   const seatPriceRows = seats.map((seat) => {
     const price = category_price.find(
       (cat) => cat.category_id === seat.category_id
     )?.price;
     if (price === undefined || price === null) {
-      throw new AppError('MISSING_PRICE', `Missing price for seat_category id ${seat.category_id}`, 400);
+      throw new AppError(
+        'MISSING_PRICE',
+        `Missing price for seat_category id ${seat.category_id}`,
+        400
+      );
     }
     return { seat_id: seat.id, price };
   });
@@ -62,47 +73,61 @@ const createNewShow = async (req, res) => {
     );
   }
 
-  const client = await db.pool.connect();
-
+  let client;
   try {
-    const { movie_id, screen_id, start_time, category_price, language } = req.body;
+    const { movie_id, screen_id, start_time, category_price, language } =
+      req.body;
 
-    const runtime = await getMovieRuntimeById(movie_id);
+    let runtime = await getMovieRuntimeById(movie_id);
 
-    if (runtime) {
-      const overlapping = await findOverlappingShows(
-        screen_id,
-        start_time,
-        runtime
-      );
-      if (overlapping.length > 0) {
-        const conflict = overlapping[0];
-        throw new AppError(
-          'CONFLICT',
-          `Show time conflicts with "${conflict.title}" starting at ${conflict.start_time} (runtime: ${conflict.runtime} min). Please choose a different time.`,
-          409
-        );
-      }
+    if (!runtime) {
+      const tmdb_id = await getTMDBIdByMovieId(movie_id);
+      if (tmdb_id) await fetchAndUpdateMovieRuntime(tmdb_id);
+      runtime = await getMovieRuntimeById(movie_id);
     }
 
-    const show = await createShow(client, movie_id, screen_id, start_time, language);
+    if (!runtime) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'Movie runtime is required to check for show overlaps. Please ensure the movie has a runtime set.',
+        400
+      );
+    }
+    client = await db.pool.connect();
+    await client.query('BEGIN');
+    const overlapping = await findOverlappingShows(
+      client,
+      screen_id,
+      start_time,
+      runtime
+    );
+    if (overlapping.length > 0) {
+      const conflict = overlapping[0];
+      throw new AppError(
+        'CONFLICT',
+        `Show time conflicts with "${conflict.title}" starting at ${conflict.start_time} (runtime: ${conflict.runtime} min). Please choose a different time.`,
+        409
+      );
+    }
+
+    const show = await createShow(
+      client,
+      movie_id,
+      screen_id,
+      start_time,
+      language
+    );
 
     await createShowSeatByScreenId(client, show.id, screen_id, category_price);
-
-    // Update TMDB runtime in background — don't let failure block the response
-    getTMDBIdByMovieId(movie_id)
-      .then((tmdb_id) => tmdb_id && fetchAndUpdateMovieRuntime(tmdb_id))
-      .catch((err) => console.error('Background TMDB update failed:', err));
-
     await client.query('COMMIT');
     ApiResponse.success(res, { data: show, statusCode: 201 });
   } catch (err) {
-    await client.query('ROLLBACK');
-    console.error("Error Creating shows", err);
+    if (client) await client.query('ROLLBACK');
     if (err instanceof AppError) throw err;
+    console.error('Error Creating shows', err);
     throw new AppError('SERVER_ERROR', 'Something went wrong', 500);
   } finally {
-    client.release();
+    if (client) client.release();
   }
 };
 
@@ -135,7 +160,10 @@ const getSeatsByShowId = async (req, res) => {
     row.seats.push({ id, column_label, category_id, status, price });
   });
 
-  ApiResponse.success(res, { data: layout, message: 'Seats fetched successfully' });
+  ApiResponse.success(res, {
+    data: layout,
+    message: 'Seats fetched successfully',
+  });
 };
 
 module.exports = {

@@ -1,4 +1,6 @@
-require("dotenv").config({ path: require("path").resolve(__dirname, "../.env") });
+require('dotenv').config({
+  path: require('path').resolve(__dirname, '../.env'),
+});
 const { batchInsertMovies } = require('../src/models/moviesModel');
 
 const TOTAL_PAGES = 10;
@@ -31,6 +33,9 @@ const fetchPage = async (page) => {
  * Function to fetch movies from TMDB API and insert into movies table.
  */
 const dumpMovieToMoviesTable = async () => {
+  let totalInserted = 0;
+  let totalFailed = 0;
+
   for (let page = 1; page <= TOTAL_PAGES; page++) {
     try {
       console.log(`Fetching page ${page}/${TOTAL_PAGES}...`);
@@ -43,19 +48,24 @@ const dumpMovieToMoviesTable = async () => {
       }
 
       console.log(`Inserting ${movies.length} movies from page ${page}...`);
-      await batchInsertMovies(movies);
+      const result = await batchInsertMovies(movies);
+      totalInserted += result?.inserted || 0;
+      totalFailed += result?.failed || 0;
 
       if (page < TOTAL_PAGES) await sleep(DELAY_MS);
     } catch (error) {
       console.error(`Error processing page ${page}:`, error);
-      process.exit(1);
     }
   }
+
+  return { totalInserted, totalFailed };
 };
 
 dumpMovieToMoviesTable()
-  .then(() => {
-    console.log('Movie dump completed successfully');
+  .then(({ totalInserted, totalFailed }) => {
+    console.log(
+      `Movie dump completed. Inserted/updated: ${totalInserted}, Failed: ${totalFailed}`
+    );
     process.exit(0);
   })
   .catch((error) => {
