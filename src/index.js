@@ -57,7 +57,13 @@ const razorpayInstance = new Razorpay({
 app.set('razorpay', razorpayInstance);
 app.set('db', db);
 
-app.use(cors());
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true,
+  })
+);
 
 // Webhook must be registered before express.json() so raw body is preserved for signature verification
 app.use(
