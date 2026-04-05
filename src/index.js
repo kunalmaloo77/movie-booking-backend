@@ -35,7 +35,6 @@ const {
 const {
   createBookingSeatsTable,
   createBookingTable,
-  releaseExpiredReservations,
 } = require('./models/bookingModel.js');
 
 const {
@@ -117,8 +116,6 @@ const startServer = async () => {
     await createShowSeatsTable();
     await createBookingTable();
     await createBookingSeatsTable();
-
-    setInterval(releaseExpiredReservations, 60 * 1000);
 
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
