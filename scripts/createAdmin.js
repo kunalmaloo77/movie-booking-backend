@@ -1,6 +1,6 @@
 const bcrypt = require('bcrypt');
-const db = require('../config/db');
-const { createUserTable } = require('../models/userModel');
+const db = require('../src/config/db');
+const { createUserTable } = require('../src/models/userModel');
 
 /**
  * This script creates an admin user in the database. You can run it using:

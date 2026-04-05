@@ -36,6 +36,7 @@ const {
   createBookingSeatsTable,
   createBookingTable,
 } = require('./models/bookingModel.js');
+const morgan = require('morgan');
 
 const {
   createSeatsTable,
@@ -48,6 +49,8 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+app.use(morgan('combined'));
 
 const razorpayInstance = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,

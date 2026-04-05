@@ -68,7 +68,7 @@ const createGenreMovieTable = async () => {
   const queryText = `
     create table if not exists genre_movies (
         id serial primary key,
-        genre_id int not null references genres(id),
+        genre_id int not null references genres(id) ON DELETE CASCADE,
         movie_id int not null references movies(id) ON DELETE CASCADE,
         created_at timestamp with time zone default current_timestamp,
         UNIQUE (genre_id, movie_id)
@@ -324,10 +324,17 @@ const insertSingleMovie = async (client, movie) => {
     RETURNING id, tmdb_id
   `;
 
-  const movieResult = await client.query(movieQueryText, buildMovieValues(movie));
+  const movieResult = await client.query(
+    movieQueryText,
+    buildMovieValues(movie)
+  );
   const dbMovieId = movieResult.rows[0]?.id;
 
-  if (dbMovieId && Array.isArray(movie.genre_ids) && movie.genre_ids.length > 0) {
+  if (
+    dbMovieId &&
+    Array.isArray(movie.genre_ids) &&
+    movie.genre_ids.length > 0
+  ) {
     const genrePairs = movie.genre_ids.map((genreId) => [dbMovieId, genreId]);
     await insertGenrePairs(client, genrePairs);
   }
@@ -345,7 +352,9 @@ const batchInsertMovies = async (movies) => {
       await client.query('BEGIN');
       await insertMovieBatch(client, movies);
       await client.query('COMMIT');
-      console.log(`Movie import summary: ${movies.length} succeeded, 0 failed, ${movies.length} total`);
+      console.log(
+        `Movie import summary: ${movies.length} succeeded, 0 failed, ${movies.length} total`
+      );
       return { total: movies.length, inserted: movies.length, failed: 0 };
     } catch (error) {
       await client.query('ROLLBACK');
@@ -385,7 +394,8 @@ const batchInsertMovies = async (movies) => {
 
 const updateMovieById = async (
   id,
-  { title,
+  {
+    title,
     rating,
     language,
     adult,
@@ -395,10 +405,10 @@ const updateMovieById = async (
     backdrop_image_url,
     overview,
     genre_ids,
-  }) => {
+  }
+) => {
   const client = await db.pool.connect();
   try {
-
     await client.query('BEGIN');
     const movieResult = await client.query(
       `UPDATE movies
@@ -407,7 +417,18 @@ const updateMovieById = async (
        WHERE id=$10
        RETURNING id, title, source, tmdb_id, rating, language, adult, runtime,
                  release_date, poster_image_url, backdrop_image_url, overview, created_at`,
-      [title, rating, language, adult, runtime, release_date, poster_image_url, backdrop_image_url, overview, id]
+      [
+        title,
+        rating,
+        language,
+        adult,
+        runtime,
+        release_date,
+        poster_image_url,
+        backdrop_image_url,
+        overview,
+        id,
+      ]
     );
 
     if (movieResult.rowCount === 0) {
@@ -445,9 +466,16 @@ const deleteMovieById = async (id) => {
     [id]
   );
   if (parseInt(showCheck.rows[0].count) > 0) {
-    throw new AppError('CONFLICT', 'Cannot delete a movie that has upcoming shows.', 409);
+    throw new AppError(
+      'CONFLICT',
+      'Cannot delete a movie that has upcoming shows.',
+      409
+    );
   }
-  const result = await db.query('DELETE FROM movies WHERE id = $1 RETURNING id', [id]);
+  const result = await db.query(
+    'DELETE FROM movies WHERE id = $1 RETURNING id',
+    [id]
+  );
   if (result.rowCount === 0) {
     throw new AppError('NOT_FOUND', 'Movie not found', 404);
   }
