@@ -5,6 +5,8 @@ const {
   fetchMovies,
   fetchGenres,
   updateMovieRuntime,
+  updateMovieById,
+  deleteMovieById,
   getMoviesFromRegion,
 } = require('../models/moviesModel');
 const { pool } = require('../config/db');
@@ -87,12 +89,18 @@ const getMoviesByRegion = async (req, res) => {
 
 const getMovieById = async (req, res) => {
   const queryText = `
-      SELECT movies.title, movies.poster_image_url, movies.backdrop_image_url, movies.rating, movies.overview, movies.runtime, movies.adult, STRING_AGG(genres.name, ', ') AS genres
+      SELECT movies.id, movies.source, movies.tmdb_id, movies.title, movies.poster_image_url,
+             movies.backdrop_image_url, movies.rating, movies.overview, movies.runtime,
+             movies.adult, movies.language, movies.release_date,
+             STRING_AGG(genres.name, ', ') AS genres,
+             COALESCE(ARRAY_AGG(genre_movies.genre_id) FILTER (WHERE genre_movies.genre_id IS NOT NULL), '{}') AS genre_ids
       FROM movies
-      JOIN genre_movies ON movies.id = genre_movies.movie_id
-      JOIN genres ON genre_movies.genre_id = genres.id
+      LEFT JOIN genre_movies ON movies.id = genre_movies.movie_id
+      LEFT JOIN genres ON genre_movies.genre_id = genres.id
       WHERE movies.id = $1
-      GROUP BY movies.id, movies.title, movies.poster_image_url, movies.backdrop_image_url, movies.rating, movies.overview, movies.runtime, movies.adult;
+      GROUP BY movies.id, movies.source, movies.tmdb_id, movies.title, movies.poster_image_url,
+               movies.backdrop_image_url, movies.rating, movies.overview, movies.runtime,
+               movies.adult, movies.language, movies.release_date;
       `;
   const result = await pool.query(queryText, [req.params.id]);
   if (!result.rows[0]) {
@@ -119,6 +127,68 @@ const getMovies = async (req, res) => {
       totalItems: total_movies,
     },
   });
+};
+
+const updateMovie = async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id || id < 1) {
+    throw new AppError('VALIDATION_ERROR', 'Invalid movie id.', 400);
+  }
+
+  const {
+    title,
+    rating,
+    language,
+    adult,
+    runtime,
+    release_date,
+    poster_image_url,
+    backdrop_image_url,
+    overview,
+    genre_ids,
+  } = req.body;
+
+  if (
+    !title ||
+    !rating ||
+    !language ||
+    adult === undefined ||
+    adult === null ||
+    !release_date ||
+    !poster_image_url ||
+    !backdrop_image_url
+  ) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'All fields are required: title, rating, language, adult, release_date, poster_image_url, backdrop_image_url.',
+      400
+    );
+  }
+
+  const updated = await updateMovieById(id, {
+    title,
+    rating,
+    language,
+    adult,
+    runtime,
+    release_date,
+    poster_image_url,
+    backdrop_image_url,
+    overview,
+    genre_ids,
+  });
+
+  ApiResponse.success(res, { data: updated, message: 'Movie updated successfully' });
+};
+
+const deleteMovie = async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id || id < 1) {
+    throw new AppError('VALIDATION_ERROR', 'Invalid movie id.', 400);
+  }
+
+  await deleteMovieById(id);
+  ApiResponse.success(res, { data: null, message: 'Movie deleted successfully' });
 };
 
 const fetchAndUpdateMovieRuntime = async (tmdb_id) => {
@@ -150,5 +220,7 @@ module.exports = {
   getMovieById,
   getGenres,
   getMovies,
+  updateMovie,
+  deleteMovie,
   fetchAndUpdateMovieRuntime,
 };

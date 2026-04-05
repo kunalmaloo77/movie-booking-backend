@@ -7,6 +7,8 @@ const {
   getMovieById,
   getGenres,
   getMovies,
+  updateMovie,
+  deleteMovie,
 } = require('../controllers/movieController.js');
 
 const router = express.Router();
@@ -17,5 +19,7 @@ router.get('/', getMovies);
 router.get('/region/:id', getMoviesByRegion);
 router.get('/genres', getGenres);
 router.get('/:id', getMovieById);
+router.put('/:id', adminVerification, updateMovie);
+router.delete('/:id', adminVerification, deleteMovie);
 
 module.exports = router;

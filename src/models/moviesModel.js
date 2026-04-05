@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const AppError = require('../utils/AppError');
 const PAGE_LIMIT = 20;
 
 const createGenreTable = async () => {
@@ -68,7 +69,7 @@ const createGenreMovieTable = async () => {
     create table if not exists genre_movies (
         id serial primary key,
         genre_id int not null references genres(id),
-        movie_id int not null references movies(id),
+        movie_id int not null references movies(id) ON DELETE CASCADE,
         created_at timestamp with time zone default current_timestamp,
         UNIQUE (genre_id, movie_id)
     );
@@ -382,6 +383,77 @@ const batchInsertMovies = async (movies) => {
   }
 };
 
+const updateMovieById = async (
+  id,
+  { title,
+    rating,
+    language,
+    adult,
+    runtime,
+    release_date,
+    poster_image_url,
+    backdrop_image_url,
+    overview,
+    genre_ids,
+  }) => {
+  const client = await db.pool.connect();
+  try {
+
+    await client.query('BEGIN');
+    const movieResult = await client.query(
+      `UPDATE movies
+       SET title=$1, rating=$2, language=$3, adult=$4, runtime=$5,
+           release_date=$6, poster_image_url=$7, backdrop_image_url=$8, overview=$9
+       WHERE id=$10
+       RETURNING id, title, source, tmdb_id, rating, language, adult, runtime,
+                 release_date, poster_image_url, backdrop_image_url, overview, created_at`,
+      [title, rating, language, adult, runtime, release_date, poster_image_url, backdrop_image_url, overview, id]
+    );
+
+    if (movieResult.rowCount === 0) {
+      throw new AppError('NOT_FOUND', 'Movie not found', 404);
+    }
+
+    await client.query('DELETE FROM genre_movies WHERE movie_id = $1', [id]);
+
+    if (genre_ids && genre_ids.length > 0) {
+      const values = [];
+      const placeholders = genre_ids.map((genre_id, i) => {
+        const base = i * 2;
+        values.push(genre_id, id);
+        return `($${base + 1}, $${base + 2})`;
+      });
+      await client.query(
+        `INSERT INTO genre_movies (genre_id, movie_id) VALUES ${placeholders.join(', ')} ON CONFLICT (genre_id, movie_id) DO NOTHING`,
+        values
+      );
+    }
+
+    await client.query('COMMIT');
+    return movieResult.rows[0];
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+const deleteMovieById = async (id) => {
+  const showCheck = await db.query(
+    'SELECT COUNT(*) FROM shows WHERE movie_id = $1 AND start_time > NOW()',
+    [id]
+  );
+  if (parseInt(showCheck.rows[0].count) > 0) {
+    throw new AppError('CONFLICT', 'Cannot delete a movie that has upcoming shows.', 409);
+  }
+  const result = await db.query('DELETE FROM movies WHERE id = $1 RETURNING id', [id]);
+  if (result.rowCount === 0) {
+    throw new AppError('NOT_FOUND', 'Movie not found', 404);
+  }
+  return result.rows[0];
+};
+
 const updateMovieRuntime = async (tmdb_id, runtime) => {
   try {
     const queryText = `
@@ -429,6 +501,8 @@ module.exports = {
   fetchMovies,
   batchInsertMovies,
   updateMovieRuntime,
+  updateMovieById,
+  deleteMovieById,
   getMovieRuntimeById,
   getMoviesFromRegion,
   getTMDBIdByMovieId,
