@@ -3,6 +3,7 @@ const {
   getSeatCategories,
   findSeatsByScreenId,
   getSeatCategoriesByScreenId,
+  findSeatsByShowId,
 } = require('../models/seatModel.js');
 const { insertSeatsBatch } = require('../utils/seatService.js');
 const AppError = require('../utils/AppError.js');
@@ -11,7 +12,11 @@ const ApiResponse = require('../utils/ApiResponse.js');
 const handleCreateSeatCategory = async (req, res) => {
   const { name, description } = req.body;
   if (!name || !description) {
-    throw new AppError('VALIDATION_ERROR', 'name and description are required', 400);
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'name and description are required',
+      400
+    );
   }
   const category = await createSeatCategory(name, description);
   ApiResponse.success(res, { data: category, statusCode: 201 });
@@ -24,7 +29,11 @@ const handleCreateSeatCategory = async (req, res) => {
 const handleCreateSeat = async (req, res) => {
   const seats_array = req.body;
   if (!seats_array || !Array.isArray(seats_array) || seats_array.length === 0) {
-    throw new AppError('VALIDATION_ERROR', 'seats_array must be a non-empty array', 400);
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'seats_array must be a non-empty array',
+      400
+    );
   }
   const createdSeats = await insertSeatsBatch(seats_array);
   ApiResponse.success(res, { data: createdSeats, statusCode: 201 });
@@ -47,7 +56,10 @@ const getSeatsByScreenId = async (req, res) => {
     row.seats.push({ id, column_label, category_id });
   });
 
-  ApiResponse.success(res, { data: layout, message: 'Seats fetched successfully' });
+  ApiResponse.success(res, {
+    data: layout,
+    message: 'Seats fetched successfully',
+  });
 };
 
 const handleGetSeatCategoriesByScreenId = async (req, res) => {
@@ -61,10 +73,34 @@ const handleGetSeatCategories = async (req, res) => {
   ApiResponse.success(res, { data: categories });
 };
 
+const getSeatsByShowId = async (req, res) => {
+  const { show_id } = req.params;
+  const seats = await findSeatsByShowId(show_id);
+  const layout = [];
+  seats.forEach((seat) => {
+    const { id, row_label, column_label, category_id, status, price } = seat;
+    let row = layout.find((r) => r.row === row_label);
+    if (!row) {
+      row = {
+        row: row_label,
+        seats: [],
+      };
+      layout.push(row);
+    }
+    row.seats.push({ id, column_label, category_id, status, price });
+  });
+
+  ApiResponse.success(res, {
+    data: layout,
+    message: 'Seats fetched successfully',
+  });
+};
+
 module.exports = {
   handleCreateSeatCategory,
   handleCreateSeat,
   getSeatsByScreenId,
   handleGetSeatCategoriesByScreenId,
   handleGetSeatCategories,
+  getSeatsByShowId,
 };

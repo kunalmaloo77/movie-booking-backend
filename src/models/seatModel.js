@@ -83,9 +83,21 @@ const findSeatsByScreenId = async (screen_id) => {
 
 const findSeatsByShowId = async (show_id) => {
   const queryText = `
-    SELECT s.id, s.row_label, s.column_label, s.category_id, ss.status, ss.price
+    SELECT 
+      s.id, 
+      s.row_label, 
+      s.column_label, 
+      s.category_id, 
+      CASE
+        WHEN ss.status  = 'reserved' AND ss.reserved_until < NOW() 
+          THEN 'available'
+        ELSE ss.status
+      END AS status,
+      ss.price
     FROM seats s
-    JOIN show_seats ss ON s.id = ss.seat_id AND ss.show_id = $1
+    JOIN show_seats ss 
+      ON s.id = ss.seat_id 
+      AND ss.show_id = $1
     ORDER BY s.row_label, s.column_label;
   `;
   const result = await db.query(queryText, [show_id]);

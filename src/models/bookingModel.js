@@ -96,10 +96,10 @@ const createBooking = async (
 
     // Lock rows and check seats are available (not booked or reserved by someone else)
     const availabilityCheck = await client.query(
-      `SELECT ss.id, ss.seat_id, ss.price FROM show_seats ss
-       WHERE ss.show_id = $1
-         AND ss.id = ANY($2::int[])
-         AND ss.status = 'available'
+      `SELECT id, seat_id, price FROM show_seats
+       WHERE show_id = $1
+         AND id = ANY($2::int[])
+         AND ( status = 'available' OR (status = 'reserved' AND reserved_until < NOW()) )
        FOR UPDATE`,
       [show_id, show_seat_ids]
     );
