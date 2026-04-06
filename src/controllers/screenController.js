@@ -105,7 +105,7 @@ const createScreenController = async (req, res) => {
 
 const updateScreenController = async (req, res) => {
   const { screen_id } = req.params;
-  if (!screen_id) {
+  if (!screen_id || isNaN(parseInt(screen_id))) {
     throw new AppError('MISSING_ID', 'Screen id is required', 400);
   }
 

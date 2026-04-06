@@ -10,7 +10,7 @@ const {
 const router = express.Router();
 
 router.post('/', verifyToken, createNewBooking);
-router.post('/verify', verifyBookingPayment);              // public — secured by Razorpay signature
+router.post('/verify', verifyBookingPayment);
 router.post('/webhook', razorpayWebhook); // public — secured by Razorpay webhook signature
 router.get('/user/:user_id', verifyToken, getBookingsByUserId);
 
