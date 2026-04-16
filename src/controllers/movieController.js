@@ -8,6 +8,8 @@ const {
   updateMovieById,
   deleteMovieById,
   getMoviesFromRegion,
+  getMoviesFromRegionWithFilters,
+  getFilterOptionsForRegion,
 } = require('../models/moviesModel');
 const { pool } = require('../config/db');
 const AppError = require('../utils/AppError');
@@ -21,7 +23,11 @@ const createNewGenre = async (req, res) => {
   }
 
   const genre = await createGenre(name);
-  ApiResponse.success(res, { data: genre, message: 'Genre created successfully', statusCode: 201 });
+  ApiResponse.success(res, {
+    data: genre,
+    message: 'Genre created successfully',
+    statusCode: 201,
+  });
 };
 
 const createNewMovie = async (req, res) => {
@@ -58,7 +64,11 @@ const createNewMovie = async (req, res) => {
   }
 
   if (source === 'tmdb' && !tmdb_id) {
-    throw new AppError('VALIDATION_ERROR', "tmdb_id is required when source is 'tmdb'.", 400);
+    throw new AppError(
+      'VALIDATION_ERROR',
+      "tmdb_id is required when source is 'tmdb'.",
+      400
+    );
   }
 
   const movie = await createMovie(
@@ -79,12 +89,32 @@ const createNewMovie = async (req, res) => {
     await batchCreateGenreMovies(genre_ids, movie.id);
   }
 
-  ApiResponse.success(res, { data: movie, message: 'Movie created successfully', statusCode: 201 });
+  ApiResponse.success(res, {
+    data: movie,
+    message: 'Movie created successfully',
+    statusCode: 201,
+  });
 };
 
 const getMoviesByRegion = async (req, res) => {
-  const result = await getMoviesFromRegion(req.params.id);
-  ApiResponse.success(res, { data: result });
+  const { region_id } = req.params;
+  const { page } = req.query;
+  if (
+    !region_id ||
+    isNaN(region_id) ||
+    parseInt(region_id) < 1 ||
+    (page && (isNaN(page) || parseInt(page) < 1))
+  ) {
+    throw new AppError('VALIDATION_ERROR', 'Invalid parameters.', 400);
+  }
+  const { data, total_pages, current_page } = await getMoviesFromRegion(
+    Number.parseInt(page) || 1,
+    Number.parseInt(region_id)
+  );
+  ApiResponse.success(res, {
+    data,
+    pagination: { page: current_page, pageSize: 20, totalPages: total_pages },
+  });
 };
 
 const getMovieById = async (req, res) => {
@@ -93,7 +123,13 @@ const getMovieById = async (req, res) => {
              movies.backdrop_image_url, movies.rating, movies.overview, movies.runtime,
              movies.adult, movies.language, movies.release_date,
              STRING_AGG(genres.name, ', ') AS genres,
-             COALESCE(ARRAY_AGG(genre_movies.genre_id) FILTER (WHERE genre_movies.genre_id IS NOT NULL), '{}') AS genre_ids
+             COALESCE(ARRAY_AGG(genre_movies.genre_id) FILTER (WHERE genre_movies.genre_id IS NOT NULL), '{}') AS genre_ids,
+             EXISTS (
+               SELECT 1 FROM shows
+               WHERE shows.movie_id = movies.id
+                 AND shows.start_time > NOW()
+                 AND shows.status != 'cancelled'
+             ) AS has_shows
       FROM movies
       LEFT JOIN genre_movies ON movies.id = genre_movies.movie_id
       LEFT JOIN genres ON genre_movies.genre_id = genres.id
@@ -117,14 +153,13 @@ const getGenres = async (req, res) => {
 const getMovies = async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const search = req.query.search || null;
-  const { total_pages, current_page, total_movies, data } = await fetchMovies(search, page);
+  const { total_pages, current_page, data } = await fetchMovies(search, page);
   ApiResponse.success(res, {
     data,
     pagination: {
       page: current_page,
       pageSize: 20,
       totalPages: total_pages,
-      totalItems: total_movies,
     },
   });
 };
@@ -178,7 +213,10 @@ const updateMovie = async (req, res) => {
     genre_ids,
   });
 
-  ApiResponse.success(res, { data: updated, message: 'Movie updated successfully' });
+  ApiResponse.success(res, {
+    data: updated,
+    message: 'Movie updated successfully',
+  });
 };
 
 const deleteMovie = async (req, res) => {
@@ -188,7 +226,10 @@ const deleteMovie = async (req, res) => {
   }
 
   await deleteMovieById(id);
-  ApiResponse.success(res, { data: null, message: 'Movie deleted successfully' });
+  ApiResponse.success(res, {
+    data: null,
+    message: 'Movie deleted successfully',
+  });
 };
 
 const fetchAndUpdateMovieRuntime = async (tmdb_id) => {
@@ -213,6 +254,38 @@ const fetchAndUpdateMovieRuntime = async (tmdb_id) => {
   }
 };
 
+const getMoviesWithFilters = async (req, res) => {
+  const { region_id } = req.params;
+  const { page, language, genre_id, screen_type_id } = req.query;
+
+  if (!region_id || isNaN(region_id) || parseInt(region_id) < 1) {
+    throw new AppError('VALIDATION_ERROR', 'Invalid region_id.', 400);
+  }
+
+  const { data, total_pages, current_page, total } =
+    await getMoviesFromRegionWithFilters(
+      Number.parseInt(page) || 1,
+      Number.parseInt(region_id),
+      { language, genre_id, screen_type_id }
+    );
+
+  ApiResponse.success(res, {
+    data,
+    pagination: { page: current_page, pageSize: 20, totalPages: total_pages, total },
+  });
+};
+
+const getMovieFilterOptions = async (req, res) => {
+  const { region_id } = req.params;
+
+  if (!region_id || isNaN(region_id) || parseInt(region_id) < 1) {
+    throw new AppError('VALIDATION_ERROR', 'Invalid region_id.', 400);
+  }
+
+  const options = await getFilterOptionsForRegion(Number.parseInt(region_id));
+  ApiResponse.success(res, { data: options });
+};
+
 module.exports = {
   createNewGenre,
   createNewMovie,
@@ -223,4 +296,6 @@ module.exports = {
   updateMovie,
   deleteMovie,
   fetchAndUpdateMovieRuntime,
+  getMoviesWithFilters,
+  getMovieFilterOptions,
 };

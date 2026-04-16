@@ -7,7 +7,7 @@ const {
 } = require('../models/bookingModel.js');
 const AppError = require('../utils/AppError.js');
 const ApiResponse = require('../utils/ApiResponse.js');
-const { findShowSeatIds } = require('../models/showsModel.js');
+const { findShowSeatIds, findShowById } = require('../models/showsModel.js');
 
 const createNewBooking = async (req, res) => {
   const { show_id, seat_ids } = req.body;
@@ -20,6 +20,17 @@ const createNewBooking = async (req, res) => {
     seat_ids.length === 0
   ) {
     throw new AppError('VALIDATION_ERROR', 'Missing or invalid required fields', 400);
+  }
+
+  const show = await findShowById(show_id);
+  if (!show) {
+    throw new AppError('NOT_FOUND', 'Show not found', 404);
+  }
+  if (show.status === 'cancelled') {
+    throw new AppError('BAD_REQUEST', 'This show has been cancelled', 400);
+  }
+  if (new Date(show.start_time) <= new Date()) {
+    throw new AppError('BAD_REQUEST', 'Cannot book seats for a show that has already started', 400);
   }
 
   const razorpayInstance = req.app.get('razorpay');

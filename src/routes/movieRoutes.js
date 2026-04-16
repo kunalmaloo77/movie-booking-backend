@@ -9,6 +9,8 @@ const {
   getMovies,
   updateMovie,
   deleteMovie,
+  getMoviesWithFilters,
+  getMovieFilterOptions,
 } = require('../controllers/movieController.js');
 
 const router = express.Router();
@@ -16,7 +18,9 @@ const router = express.Router();
 router.post('/', adminVerification, createNewMovie);
 router.post('/genre/', adminVerification, createNewGenre);
 router.get('/', getMovies);
-router.get('/region/:id', getMoviesByRegion);
+router.get('/region/:region_id/options', getMovieFilterOptions);
+router.get('/region/:region_id/filtered', getMoviesWithFilters);
+router.get('/region/:region_id', getMoviesByRegion);
 router.get('/genres', getGenres);
 router.get('/:id', getMovieById);
 router.put('/:id', adminVerification, updateMovie);

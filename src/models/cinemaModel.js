@@ -56,7 +56,7 @@ const findCinemaByCinemaCode = async (cinema_code) => {
   return result.rows[0];
 };
 
-const findCinemaByRegionId = async (region_id) => {
+const getCinemaByRegionId = async (region_id) => {
   try {
     const queryText = `SELECT 
     cinemas.id,
@@ -74,21 +74,21 @@ const findCinemaByRegionId = async (region_id) => {
   }
 };
 
-const findCinemaByMovieIdAndRegionId = async (region_id, movie_id) => {
+const getCinemaByMovieIdAndRegionId = async (region_id, movie_id) => {
   try {
     const queryText = `SELECT 
-    cinemas.id as cinema_id,
-    cinemas.cinema_name,
-    cinemas.cinema_code,
-    cinemas.address,
-    shows.id as show_id,
-    shows.start_time,
-    shows.movie_id
-    FROM cinemas
-    JOIN screens ON cinemas.id = screens.cinema_id
-    JOIN shows ON screens.id = shows.screen_id
-    WHERE cinemas.region_id = $1 AND shows.movie_id = $2
-    ORDER BY shows.start_time`;
+    c.id as cinema_id,
+    c.cinema_name,
+    c.cinema_code,
+    c.address,
+    s.id as show_id,
+    s.start_time,
+    s.movie_id
+    FROM cinemas as c
+    JOIN screens ON c.id = screens.cinema_id
+    JOIN shows as s ON screens.id = s.screen_id
+    WHERE c.region_id = $1 AND s.movie_id = $2
+    ORDER BY s.start_time`;
     const result = await db.query(queryText, [region_id, movie_id]);
     return result.rows;
   } catch (error) {
@@ -127,7 +127,7 @@ module.exports = {
   createCinemaTable,
   createCinema,
   findCinemaByCinemaCode,
-  findCinemaByRegionId,
-  findCinemaByMovieIdAndRegionId,
+  getCinemaByRegionId,
+  getCinemaByMovieIdAndRegionId,
   searchCinemas,
 };

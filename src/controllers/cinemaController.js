@@ -1,7 +1,7 @@
 const {
   createCinema: createCinemaModel,
-  findCinemaByRegionId: findCinemaByRegionIdModel,
-  findCinemaByMovieIdAndRegionId: findCinemaByMovieIdAndRegionIdModel,
+  getCinemaByRegionId,
+  getCinemaByMovieIdAndRegionId,
   searchCinemas: searchCinemasModel,
 } = require('../models/cinemaModel.js');
 const AppError = require('../utils/AppError.js');
@@ -15,13 +15,13 @@ const createCinema = async (req, res) => {
 
 const findCinemaByRegionId = async (req, res) => {
   const { region_id } = req.params;
-  const cinemas = await findCinemaByRegionIdModel(region_id);
+  const cinemas = await getCinemaByRegionId(region_id);
   ApiResponse.success(res, { data: cinemas });
 };
 
 const findCinemaByMovieIdAndRegionId = async (req, res) => {
   const { region_id, movie_id } = req.params;
-  const cinemas = await findCinemaByMovieIdAndRegionIdModel(region_id, movie_id);
+  const cinemas = await getCinemaByMovieIdAndRegionId(region_id, movie_id);
   ApiResponse.success(res, { data: cinemas });
 };
 

@@ -111,6 +111,14 @@ const createShowSeat = async (show_id, seat_id, price) => {
   return result.rows[0];
 };
 
+const findShowById = async (show_id) => {
+  const result = await db.query(
+    'SELECT id, start_time, status FROM shows WHERE id = $1',
+    [show_id]
+  );
+  return result.rows[0] || null;
+};
+
 const findShowSeatIds = async (show_id, seat_ids) => {
   const queryText = `
     SELECT id FROM show_seats WHERE show_id = $1 AND seat_id = ANY($2);
@@ -139,6 +147,7 @@ const batchCreateShowSeats = async (client, show_id, seatPriceRows) => {
 module.exports = {
   createShowsTable,
   createShow,
+  findShowById,
   findShowsByScreenId,
   findShowsByMovieId,
   findOverlappingShows,

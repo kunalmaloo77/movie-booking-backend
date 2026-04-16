@@ -44,10 +44,13 @@ const createMoviesTable = async () => {
   }
 };
 
-const getMoviesFromRegion = async (region_id) => {
+const getMoviesFromRegion = async (page = 1, region_id) => {
+  const offset = (page - 1) * PAGE_LIMIT;
+  const values = [region_id, PAGE_LIMIT, offset];
   try {
     const queryText = `
-    SELECT m.id, m.title, m.poster_image_url, m.backdrop_image_url, m.rating, m.overview, m.adult, STRING_AGG(DISTINCT g.name, ', ') AS genres
+    SELECT m.id, m.title, m.poster_image_url, m.backdrop_image_url, m.rating, m.overview, m.adult, m.created_at, 
+          STRING_AGG(DISTINCT g.name, ', ') AS genres
           FROM movies m
           JOIN genre_movies gm ON m.id = gm.movie_id
           JOIN genres g ON gm.genre_id = g.id
@@ -55,9 +58,17 @@ const getMoviesFromRegion = async (region_id) => {
           JOIN screens sc ON s.screen_id = sc.id
           JOIN cinemas c ON sc.cinema_id = c.id
           WHERE c.region_id = $1
-		  GROUP BY m.id, m.title, m.poster_image_url, m.backdrop_image_url, m.rating, m.overview, m.adult;`;
-    const result = await db.query(queryText, [region_id]);
-    return result.rows;
+		  GROUP BY m.id, m.title, m.poster_image_url, m.backdrop_image_url, m.rating, m.overview, m.adult
+          ORDER BY m.created_at DESC
+          LIMIT $2 OFFSET $3;
+    `;
+    const result = await db.query(queryText, values);
+    const totalPages = Math.ceil(result.rows.length / PAGE_LIMIT);
+    return {
+      total_pages: totalPages,
+      current_page: page,
+      data: result.rows,
+    };
   } catch (error) {
     console.error('Error fetching movies from region:', error);
     throw error;
@@ -201,21 +212,18 @@ const fetchMovies = async (search = null, page = 1) => {
     SELECT id, title, source, tmdb_id, rating, language, adult, runtime,
            release_date, poster_image_url, backdrop_image_url, overview, created_at, COUNT(*) OVER() AS total_count
     FROM movies
-    ${whereClause} LIMIT $${values.length + 1} OFFSET $${values.length + 2};
+    ${whereClause} ORDER BY created_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2};
   `;
 
   values.push(PAGE_LIMIT, offset);
 
   const result = await db.query(queryText, values);
-  const rows = result.rows;
-  const totalCount = rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
-  const totalPages = Math.ceil(totalCount / PAGE_LIMIT);
-  const data = rows.map(({ total_count, ...movieData }) => movieData);
+  const totalPages = Math.ceil(result.rows[0]?.total_count || 0 / PAGE_LIMIT);
+  const data = result.rows.map(({ total_count, ...movieData }) => movieData);
 
   return {
     total_pages: totalPages,
     current_page: page,
-    total_movies: totalCount,
     data: data,
   };
 };
@@ -516,6 +524,112 @@ const getTMDBIdByMovieId = async (movie_id) => {
   }
 };
 
+const getMoviesFromRegionWithFilters = async (
+  page = 1,
+  region_id,
+  { language, genre_id, screen_type_id } = {}
+) => {
+  const offset = (page - 1) * PAGE_LIMIT;
+  const conditions = ['c.region_id = $1', 's.start_time > CURRENT_TIMESTAMP'];
+  const values = [region_id];
+  let paramIdx = 2;
+
+  if (language) {
+    conditions.push(`s.language = $${paramIdx++}`);
+    values.push(language);
+  }
+  if (genre_id) {
+    conditions.push(
+      `EXISTS (SELECT 1 FROM genre_movies gm2 WHERE gm2.movie_id = m.id AND gm2.genre_id = $${paramIdx++})`
+    );
+    values.push(parseInt(genre_id));
+  }
+  if (screen_type_id) {
+    conditions.push(`sc.screen_type = $${paramIdx++}`);
+    values.push(parseInt(screen_type_id));
+  }
+
+  const whereClause = conditions.join(' AND ');
+  values.push(PAGE_LIMIT, offset);
+  const limitIdx = paramIdx;
+  const offsetIdx = paramIdx + 1;
+
+  const queryText = `
+    SELECT m.id, m.title, m.poster_image_url, m.backdrop_image_url, m.rating, m.overview,
+           m.adult, m.created_at, m.language,
+           STRING_AGG(DISTINCT g.name, ', ') AS genres,
+           COUNT(*) OVER() AS total_count
+    FROM movies m
+    JOIN genre_movies gm ON m.id = gm.movie_id
+    JOIN genres g ON gm.genre_id = g.id
+    JOIN shows s ON m.id = s.movie_id
+    JOIN screens sc ON s.screen_id = sc.id
+    JOIN cinemas c ON sc.cinema_id = c.id
+    WHERE ${whereClause}
+    GROUP BY m.id, m.title, m.poster_image_url, m.backdrop_image_url, m.rating,
+             m.overview, m.adult, m.created_at, m.language
+    ORDER BY m.created_at DESC
+    LIMIT $${limitIdx} OFFSET $${offsetIdx};
+  `;
+
+  try {
+    const result = await db.query(queryText, values);
+    const total = parseInt(result.rows[0]?.total_count || 0);
+    const totalPages = Math.ceil(total / PAGE_LIMIT);
+    const data = result.rows.map(({ total_count, ...row }) => row);
+    return { total_pages: totalPages, current_page: page, total, data };
+  } catch (error) {
+    console.error('Error fetching movies with filters:', error);
+    throw error;
+  }
+};
+
+const getFilterOptionsForRegion = async (region_id) => {
+  try {
+    const [languages, genres, screenTypes] = await Promise.all([
+      db.query(
+        `SELECT DISTINCT s.language
+         FROM shows s
+         JOIN screens sc ON s.screen_id = sc.id
+         JOIN cinemas c ON sc.cinema_id = c.id
+         WHERE c.region_id = $1 AND s.start_time > CURRENT_TIMESTAMP
+         ORDER BY s.language`,
+        [region_id]
+      ),
+      db.query(
+        `SELECT DISTINCT g.id, g.name
+         FROM genres g
+         JOIN genre_movies gm ON g.id = gm.genre_id
+         JOIN movies m ON gm.movie_id = m.id
+         JOIN shows s ON m.id = s.movie_id
+         JOIN screens sc ON s.screen_id = sc.id
+         JOIN cinemas c ON sc.cinema_id = c.id
+         WHERE c.region_id = $1 AND s.start_time > CURRENT_TIMESTAMP
+         ORDER BY g.name`,
+        [region_id]
+      ),
+      db.query(
+        `SELECT DISTINCT st.id, st.name
+         FROM screen_types st
+         JOIN screens sc ON st.id = sc.screen_type
+         JOIN cinemas c ON sc.cinema_id = c.id
+         JOIN shows s ON sc.id = s.screen_id
+         WHERE c.region_id = $1 AND s.start_time > CURRENT_TIMESTAMP
+         ORDER BY st.name`,
+        [region_id]
+      ),
+    ]);
+    return {
+      languages: languages.rows.map((r) => r.language),
+      genres: genres.rows,
+      screen_types: screenTypes.rows,
+    };
+  } catch (error) {
+    console.error('Error fetching filter options:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   createGenreTable,
   fetchGenres,
@@ -534,4 +648,6 @@ module.exports = {
   getMovieRuntimeById,
   getMoviesFromRegion,
   getTMDBIdByMovieId,
+  getMoviesFromRegionWithFilters,
+  getFilterOptionsForRegion,
 };
