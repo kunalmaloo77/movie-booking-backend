@@ -285,14 +285,40 @@ const failBooking = async (razorpayOrderId) => {
 
 const fetchBookingsByUserId = async (user_id) => {
   const queryText = `
-    SELECT b.id AS booking_id, b.show_id, b.status, b.amount, b.created_at,
-           json_agg(json_build_object('row', s.row_label, 'col', s.column_label)) AS seats
+    SELECT
+      b.id                        AS booking_id,
+      b.show_id,
+      b.status,
+      b.amount,
+      b.created_at,
+      b.razorpay_order_id,
+      b.razorpay_payment_id,
+      m.title                     AS movie_title,
+      c.cinema_name               AS cinema_name,
+      scr.name                    AS screen_name,
+      st.name                     AS screen_type,
+      sh.start_time               AS show_time,
+      sh.language,
+      json_agg(
+        json_build_object(
+          'row',      s.row_label,
+          'col',      s.column_label,
+          'category', sc.name
+        )
+        ORDER BY s.row_label, s.column_label
+      ) AS seats
     FROM bookings b
-    JOIN booking_seats bs ON b.id = bs.booking_id
-    JOIN show_seats ss ON bs.show_seats_id = ss.id
-    JOIN seats s ON ss.seat_id = s.id
+    JOIN shows          sh  ON b.show_id        = sh.id
+    JOIN movies         m   ON sh.movie_id      = m.id
+    JOIN screens        scr ON sh.screen_id     = scr.id
+    JOIN screen_types   st  ON scr.screen_type  = st.id
+    JOIN cinemas        c   ON scr.cinema_id    = c.id
+    JOIN booking_seats  bs  ON b.id             = bs.booking_id
+    JOIN show_seats     ss  ON bs.show_seats_id = ss.id
+    JOIN seats          s   ON ss.seat_id       = s.id
+    JOIN seat_categories sc ON s.category_id    = sc.id
     WHERE b.user_id = $1
-    GROUP BY b.id
+    GROUP BY b.id, m.title, c.cinema_name, scr.name, st.name, sh.start_time, sh.language
     ORDER BY b.created_at DESC;
   `;
   const res = await db.query(queryText, [user_id]);
