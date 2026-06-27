@@ -1,6 +1,6 @@
 const db = require('../config/db');
 const AppError = require('../utils/AppError');
-const PAGE_LIMIT = 20;
+const PAGE_LIMIT = 10;
 
 const createGenreTable = async () => {
   const queryText = `
@@ -54,7 +54,7 @@ const getMoviesFromRegion = async (page = 1, region_id) => {
           FROM movies m
           JOIN genre_movies gm ON m.id = gm.movie_id
           JOIN genres g ON gm.genre_id = g.id
-          JOIN shows s ON m.id = s.movie_id AND s.start_time::date > CURRENT_DATE
+          JOIN shows s ON m.id = s.movie_id AND s.start_time > NOW()
           JOIN screens sc ON s.screen_id = sc.id
           JOIN cinemas c ON sc.cinema_id = c.id
           WHERE c.region_id = $1
@@ -527,16 +527,16 @@ const getTMDBIdByMovieId = async (movie_id) => {
 const getMoviesFromRegionWithFilters = async (
   page = 1,
   region_id,
-  { language, genre_id, screen_type_id } = {}
+  { language_id, genre_id, screen_type_id } = {}
 ) => {
   const offset = (page - 1) * PAGE_LIMIT;
   const conditions = ['c.region_id = $1', 's.start_time > CURRENT_TIMESTAMP'];
   const values = [region_id];
   let paramIdx = 2;
 
-  if (language) {
-    conditions.push(`s.language = $${paramIdx++}`);
-    values.push(language);
+  if (language_id) {
+    conditions.push(`s.language_id = $${paramIdx++}`);
+    values.push(parseInt(language_id));
   }
   if (genre_id) {
     conditions.push(
@@ -588,12 +588,13 @@ const getFilterOptionsForRegion = async (region_id) => {
   try {
     const [languages, genres, screenTypes] = await Promise.all([
       db.query(
-        `SELECT DISTINCT s.language
+        `SELECT DISTINCT l.id, l.name
          FROM shows s
+         JOIN languages l ON s.language_id = l.id
          JOIN screens sc ON s.screen_id = sc.id
          JOIN cinemas c ON sc.cinema_id = c.id
          WHERE c.region_id = $1 AND s.start_time > CURRENT_TIMESTAMP
-         ORDER BY s.language`,
+         ORDER BY l.name`,
         [region_id]
       ),
       db.query(
@@ -620,7 +621,7 @@ const getFilterOptionsForRegion = async (region_id) => {
       ),
     ]);
     return {
-      languages: languages.rows.map((r) => r.language),
+      languages: languages.rows,
       genres: genres.rows,
       screen_types: screenTypes.rows,
     };

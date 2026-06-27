@@ -37,7 +37,7 @@ const findAllRegionsController = async (req, res) => {
     data,
     pagination: {
       page: current_page,
-      pageSize: 20,
+      pageSize: 10,
       totalPages: total_pages,
       totalItems: total_regions,
     },

@@ -9,7 +9,9 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "create-admin": "node scripts/createAdmin.js",
     "migrate": "node-pg-migrate",
-    "movie-seed": "node scripts/movieDump.js"
+    "movie-seed": "node scripts/movieDump.js",
+    "seed": "node scripts/seedMockData.js",
+    "seed:reset": "node scripts/seedMockData.js --reset"
   },
   "keywords": [],
   "author": "",

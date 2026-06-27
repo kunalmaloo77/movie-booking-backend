@@ -74,7 +74,7 @@ const getCinemaByRegionId = async (region_id) => {
   }
 };
 
-const getCinemaByMovieIdAndRegionId = async (region_id, movie_id) => {
+const getCinemaByMovieIdAndRegionId = async (region_id, movie_id, selectedDate) => {
   try {
     const queryText = `SELECT 
     c.id as cinema_id,
@@ -87,9 +87,9 @@ const getCinemaByMovieIdAndRegionId = async (region_id, movie_id) => {
     FROM cinemas as c
     JOIN screens ON c.id = screens.cinema_id
     JOIN shows as s ON screens.id = s.screen_id
-    WHERE c.region_id = $1 AND s.movie_id = $2
+    WHERE c.region_id = $1 AND s.movie_id = $2 AND s.start_time::date = $3 and s.start_time > NOW() 
     ORDER BY s.start_time`;
-    const result = await db.query(queryText, [region_id, movie_id]);
+    const result = await db.query(queryText, [region_id, movie_id, selectedDate]);
     return result.rows;
   } catch (error) {
     console.error('Error finding cinema by movie id and region id:', error);

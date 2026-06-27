@@ -113,7 +113,7 @@ const getMoviesByRegion = async (req, res) => {
   );
   ApiResponse.success(res, {
     data,
-    pagination: { page: current_page, pageSize: 20, totalPages: total_pages },
+    pagination: { page: current_page, pageSize: 10, totalPages: total_pages },
   });
 };
 
@@ -158,7 +158,7 @@ const getMovies = async (req, res) => {
     data,
     pagination: {
       page: current_page,
-      pageSize: 20,
+      pageSize: 10,
       totalPages: total_pages,
     },
   });
@@ -256,7 +256,7 @@ const fetchAndUpdateMovieRuntime = async (tmdb_id) => {
 
 const getMoviesWithFilters = async (req, res) => {
   const { region_id } = req.params;
-  const { page, language, genre_id, screen_type_id } = req.query;
+  const { page, language_id, genre_id, screen_type_id } = req.query;
 
   if (!region_id || isNaN(region_id) || parseInt(region_id) < 1) {
     throw new AppError('VALIDATION_ERROR', 'Invalid region_id.', 400);
@@ -266,12 +266,17 @@ const getMoviesWithFilters = async (req, res) => {
     await getMoviesFromRegionWithFilters(
       Number.parseInt(page) || 1,
       Number.parseInt(region_id),
-      { language, genre_id, screen_type_id }
+      { language_id, genre_id, screen_type_id }
     );
 
   ApiResponse.success(res, {
     data,
-    pagination: { page: current_page, pageSize: 20, totalPages: total_pages, total },
+    pagination: {
+      page: current_page,
+      pageSize: 10,
+      totalPages: total_pages,
+      total,
+    },
   });
 };
 

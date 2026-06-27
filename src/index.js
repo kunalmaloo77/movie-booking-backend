@@ -31,7 +31,12 @@ const {
 const {
   createShowsTable,
   createShowSeatsTable,
+  migrateShowsLanguageToFk,
 } = require('./models/showsModel.js');
+const {
+  createLanguagesTable,
+  seedLanguages,
+} = require('./models/languageModel.js');
 const {
   createBookingSeatsTable,
   createBookingTable,
@@ -113,7 +118,10 @@ const startServer = async () => {
     await createMoviesTable();
     await createGenreTable();
     await createGenreMovieTable();
+    await createLanguagesTable();
+    await seedLanguages();
     await createShowsTable();
+    await migrateShowsLanguageToFk();
     await createSeatCategoriesTable();
     await createSeatsTable();
     await createShowSeatsTable();

@@ -21,7 +21,8 @@ const findCinemaByRegionId = async (req, res) => {
 
 const findCinemaByMovieIdAndRegionId = async (req, res) => {
   const { region_id, movie_id } = req.params;
-  const cinemas = await getCinemaByMovieIdAndRegionId(region_id, movie_id);
+  const { selectedDate } = req.query
+  const cinemas = await getCinemaByMovieIdAndRegionId(region_id, movie_id, selectedDate);
   ApiResponse.success(res, { data: cinemas });
 };
 

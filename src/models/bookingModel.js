@@ -298,7 +298,7 @@ const fetchBookingsByUserId = async (user_id) => {
       scr.name                    AS screen_name,
       st.name                     AS screen_type,
       sh.start_time               AS show_time,
-      sh.language,
+      lang.name                   AS language,
       json_agg(
         json_build_object(
           'row',      s.row_label,
@@ -309,6 +309,7 @@ const fetchBookingsByUserId = async (user_id) => {
       ) AS seats
     FROM bookings b
     JOIN shows          sh  ON b.show_id        = sh.id
+    JOIN languages      lang ON sh.language_id  = lang.id
     JOIN movies         m   ON sh.movie_id      = m.id
     JOIN screens        scr ON sh.screen_id     = scr.id
     JOIN screen_types   st  ON scr.screen_type  = st.id
@@ -318,7 +319,7 @@ const fetchBookingsByUserId = async (user_id) => {
     JOIN seats          s   ON ss.seat_id       = s.id
     JOIN seat_categories sc ON s.category_id    = sc.id
     WHERE b.user_id = $1
-    GROUP BY b.id, m.title, c.cinema_name, scr.name, st.name, sh.start_time, sh.language
+    GROUP BY b.id, m.title, c.cinema_name, scr.name, st.name, sh.start_time, lang.name
     ORDER BY b.created_at DESC;
   `;
   const res = await db.query(queryText, [user_id]);

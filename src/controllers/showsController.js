@@ -4,6 +4,7 @@ const {
   findShowsByMovieId,
   batchCreateShowSeats,
   findOverlappingShows,
+  findShowDetailsById,
 } = require('../models/showsModel.js');
 
 const {
@@ -21,6 +22,11 @@ const {
 const AppError = require('../utils/AppError.js');
 const ApiResponse = require('../utils/ApiResponse.js');
 const db = require('../config/db.js');
+const { findCinemaByShowId } = require('../models/cinemaModel.js');
+const {
+  fetchLanguages,
+  getDefaultLanguageId,
+} = require('../models/languageModel.js');
 
 const createShowSeatByScreenId = async (
   client,
@@ -53,7 +59,6 @@ const createNewShow = async (req, res) => {
     screen_id: 'Screen ID',
     start_time: 'Start Time',
     category_price: 'Category Price',
-    language: 'Language',
   };
 
   const missingFields = Object.keys(fieldLabels).filter((field) => {
@@ -75,8 +80,12 @@ const createNewShow = async (req, res) => {
 
   let client;
   try {
-    const { movie_id, screen_id, start_time, category_price, language } =
+    const { movie_id, screen_id, start_time, category_price, language_id } =
       req.body;
+
+    // Language defaults to English when not supplied (app-layer default — a FK
+    // column cannot carry a literal default value).
+    const resolvedLanguageId = language_id || (await getDefaultLanguageId());
 
     let runtime = await getMovieRuntimeById(movie_id);
 
@@ -115,7 +124,7 @@ const createNewShow = async (req, res) => {
       movie_id,
       screen_id,
       start_time,
-      language
+      resolvedLanguageId
     );
 
     await createShowSeatByScreenId(client, show.id, screen_id, category_price);
@@ -143,32 +152,47 @@ const getShowsByMovieId = async (req, res) => {
   ApiResponse.success(res, { data: shows });
 };
 
-const getSeatsByShowId = async (req, res) => {
+const getShowDetailsById = async (req, res) => {
   const { show_id } = req.params;
-  const seats = await findSeatsByShowId(show_id);
-  const layout = [];
-  seats.forEach((seat) => {
-    const { id, row_label, column_label, category_id, status, price } = seat;
-    let row = layout.find((r) => r.row === row_label);
-    if (!row) {
-      row = {
-        row: row_label,
-        seats: [],
-      };
-      layout.push(row);
-    }
-    row.seats.push({ id, column_label, category_id, status, price });
-  });
+  try {
+    const seats = await findSeatsByShowId(show_id);
+    const layout = [];
+    seats.forEach((seat) => {
+      const { id, row_label, column_label, category_id, status, price } = seat;
+      let row = layout.find((r) => r.row === row_label);
+      if (!row) {
+        row = {
+          row: row_label,
+          seats: [],
+        };
+        layout.push(row);
+      }
+      row.seats.push({ id, column_label, category_id, status, price });
+    });
 
-  ApiResponse.success(res, {
-    data: layout,
-    message: 'Seats fetched successfully',
-  });
+    const showDetails = await findShowDetailsById(show_id);
+
+    ApiResponse.success(res, {
+      data: {
+        seats: layout,
+        show: showDetails,
+      },
+      message: 'Show Details fetched successfully',
+    });
+  } catch (err) {
+    throw new AppError('NO_DATA_ERROR', 'Error fetching seats and layout', 400);
+  }
+};
+
+const getLanguages = async (req, res) => {
+  const languages = await fetchLanguages();
+  ApiResponse.success(res, { data: languages });
 };
 
 module.exports = {
   createNewShow,
   getShowsByScreenId,
   getShowsByMovieId,
-  getSeatsByShowId,
+  getShowDetailsById,
+  getLanguages,
 };

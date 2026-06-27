@@ -7,7 +7,7 @@ const createShowsTable = async () => {
         movie_id INT NOT NULL REFERENCES movies(id),
         screen_id INT NOT NULL REFERENCES screens(id),
         start_time TIMESTAMP WITH TIME ZONE NOT NULL,
-        language VARCHAR(50) NOT NULL DEFAULT 'English',
+        language_id INT NOT NULL REFERENCES languages(id),
         status VARCHAR(20) NOT NULL DEFAULT 'active',
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
@@ -20,19 +20,67 @@ const createShowsTable = async () => {
   }
 };
 
+// Idempotent migration that converts the legacy free-text `shows.language`
+// column into a `language_id` FK referencing the languages table. Safe to run
+// on every boot and on both fresh and pre-existing databases. Assumes the
+// languages table has already been created and seeded.
+const migrateShowsLanguageToFk = async () => {
+  try {
+    await db.query(
+      'ALTER TABLE shows ADD COLUMN IF NOT EXISTS language_id INT REFERENCES languages(id);'
+    );
+
+    // Only backfill while the legacy text column still exists.
+    const { rows } = await db.query(
+      `SELECT 1 FROM information_schema.columns
+       WHERE table_name = 'shows' AND column_name = 'language';`
+    );
+
+    if (rows.length > 0) {
+      // Preserve any language values that aren't part of the seeded fixed list.
+      await db.query(
+        `INSERT INTO languages (name)
+         SELECT DISTINCT language FROM shows
+         WHERE language IS NOT NULL
+         ON CONFLICT (name) DO NOTHING;`
+      );
+
+      await db.query(
+        `UPDATE shows s SET language_id = l.id
+         FROM languages l
+         WHERE l.name = s.language AND s.language_id IS NULL;`
+      );
+
+      // Defensive: any rows still unmapped fall back to English.
+      await db.query(
+        `UPDATE shows
+         SET language_id = (SELECT id FROM languages WHERE name = 'English')
+         WHERE language_id IS NULL;`
+      );
+
+      await db.query('ALTER TABLE shows ALTER COLUMN language_id SET NOT NULL;');
+      await db.query('ALTER TABLE shows DROP COLUMN IF EXISTS language;');
+    }
+
+    console.log('Shows language migration completed');
+  } catch (error) {
+    console.error('Error migrating shows language to FK:', error);
+  }
+};
+
 const createShow = async (
   client,
   movie_id,
   screen_id,
   start_time,
-  language = 'English'
+  language_id
 ) => {
   const queryText = `
-    INSERT INTO shows (movie_id, screen_id, start_time, language)
+    INSERT INTO shows (movie_id, screen_id, start_time, language_id)
     VALUES ($1, $2, $3, $4)
-    RETURNING id, movie_id, screen_id, start_time, language, created_at;
+    RETURNING id, movie_id, screen_id, start_time, language_id, created_at;
   `;
-  const values = [movie_id, screen_id, start_time, language];
+  const values = [movie_id, screen_id, start_time, language_id];
   const result = await client.query(queryText, values);
   return result.rows[0];
 };
@@ -144,8 +192,26 @@ const batchCreateShowSeats = async (client, show_id, seatPriceRows) => {
   return result.rows;
 };
 
+const findShowDetailsById = async (show_id) => {
+  const queryText = `
+   SELECT 
+    c.id as cinema_id,
+    c.cinema_name,
+    c.cinema_code,
+    c.address,
+    s.start_time
+    FROM cinemas as c
+    JOIN screens ON c.id = screens.cinema_id
+    JOIN shows as s ON screens.id = s.screen_id
+    WHERE s.id = $1;
+  `
+  const res = await db.query(queryText, [show_id]);
+  return res.rows[0];
+}
+
 module.exports = {
   createShowsTable,
+  migrateShowsLanguageToFk,
   createShow,
   findShowById,
   findShowsByScreenId,
@@ -155,4 +221,5 @@ module.exports = {
   createShowSeat,
   batchCreateShowSeats,
   findShowSeatIds,
+  findShowDetailsById,
 };
