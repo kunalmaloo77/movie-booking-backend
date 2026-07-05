@@ -57,13 +57,13 @@ const updateRegionController = async (req, res) => {
 };
 
 const deleteRegionController = async (req, res) => {
-  const { city_code } = req.params;
+  const { id } = req.params;
 
-  if (!city_code) {
-    throw new AppError('VALIDATION_ERROR', 'City code is required', 400);
+  if (!id) {
+    throw new AppError('VALIDATION_ERROR', 'Id is required', 400);
   }
 
-  await deleteRegion(city_code);
+  await deleteRegion(id);
   ApiResponse.success(res, { message: 'Region deleted successfully' });
 };
 

@@ -83,13 +83,13 @@ const updateRegion = async (id, new_city_code, new_city_name) => {
   return result.rows[0];
 };
 
-const deleteRegion = async (city_code) => {
+const deleteRegion = async (id) => {
   const queryText = `
     DELETE FROM regions
-    WHERE city_code = $1
+    WHERE id = $1
     RETURNING id, city_code, city_name;
   `;
-  const result = await db.query(queryText, [city_code]);
+  const result = await db.query(queryText, [id]);
 
   if (result.rowCount === 0) {
     throw new AppError('NOT_FOUND', 'Region not found', 404);

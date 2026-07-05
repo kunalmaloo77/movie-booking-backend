@@ -12,6 +12,6 @@ const router = express.Router();
 router.post('/', adminVerification, createRegionController);
 router.get('/', findRegionsController);
 router.put('/:id', adminVerification, updateRegionController);
-router.delete('/:city_code', adminVerification, deleteRegionController);
+router.delete('/:id', adminVerification, deleteRegionController);
 
 module.exports = router;
