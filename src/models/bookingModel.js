@@ -92,7 +92,7 @@ const createBooking = async (
   try {
     await client.query('BEGIN');
 
-    const reservationMinutes = process.env.RESERVATION_MINUTES || 10;
+    const reservationMinutes = process.env.RESERVATION_MINUTES || 2;
 
     // Lock rows and check seats are available (not booked or reserved by someone else)
     const availabilityCheck = await client.query(

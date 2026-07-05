@@ -25,6 +25,15 @@ const errorHandler = (err, req, res, next) => {
     });
   }
 
+  // PostgreSQL foreign key constraint violation
+  if (err.code === '23503') {
+    return ApiResponse.error(res, {
+      code: 'RESOURCE_IN_USE',
+      message: 'This record is still linked to other data and cannot be deleted yet',
+      statusCode: 409,
+    });
+  }
+
   // JWT errors
   if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
     return ApiResponse.error(res, {

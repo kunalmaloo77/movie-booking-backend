@@ -152,7 +152,7 @@ const getGenres = async (req, res) => {
 
 const getMovies = async (req, res) => {
   const page = parseInt(req.query.page) || 1;
-  const search = req.query.search || null;
+  const search = req.query.q || null;
   const { total_pages, current_page, data } = await fetchMovies(search, page);
   ApiResponse.success(res, {
     data,

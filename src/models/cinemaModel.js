@@ -74,49 +74,33 @@ const getCinemaByRegionId = async (region_id) => {
   }
 };
 
-const getCinemaByMovieIdAndRegionId = async (region_id, movie_id, selectedDate) => {
-  try {
-    const queryText = `SELECT 
-    c.id as cinema_id,
-    c.cinema_name,
-    c.cinema_code,
-    c.address,
-    s.id as show_id,
-    s.start_time,
-    s.movie_id
-    FROM cinemas as c
-    JOIN screens ON c.id = screens.cinema_id
-    JOIN shows as s ON screens.id = s.screen_id
-    WHERE c.region_id = $1 AND s.movie_id = $2 AND s.start_time::date = $3 and s.start_time > NOW() 
-    ORDER BY s.start_time`;
-    const result = await db.query(queryText, [region_id, movie_id, selectedDate]);
-    return result.rows;
-  } catch (error) {
-    console.error('Error finding cinema by movie id and region id:', error);
-    return [];
-  }
-};
-
-const searchCinemas = async (region_id = null, q = null) => {
+const searchCinemas = async (data) => {
+  const { region_id, movie_id, q } = data;
   let conditions = [];
   let values = [];
   let idx = 1;
   if (region_id) {
-    conditions.push('regions.id = $' + idx++);
+    conditions.push('r.id = $' + idx++);
     values.push(region_id);
   }
+  if (movie_id) {
+    conditions.push('s.movie_id = $' + idx++);
+    values.push(movie_id);
+  }
   if (q) {
-    conditions.push('cinemas.cinema_name ILIKE $' + idx++);
+    conditions.push('c.cinema_name ILIKE $' + idx++);
     values.push(`%${q}%`);
   }
   const whereClause =
     conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
   const queryText = `
-      SELECT cinemas.id, cinemas.cinema_name
-      FROM cinemas
-      JOIN regions ON cinemas.region_id = regions.id
+      SELECT DISTINCT c.id, c.cinema_name
+      FROM cinemas as c
+      JOIN regions as r ON c.region_id = r.id
+      JOIN screens as scr ON c.id = scr.cinema_id
+      JOIN shows as s ON scr.id = s.screen_id
       ${whereClause}
-      ORDER BY cinemas.cinema_name
+      ORDER BY c.cinema_name
       LIMIT 10;
     `;
   const result = await db.query(queryText, values);
@@ -128,6 +112,5 @@ module.exports = {
   createCinema,
   findCinemaByCinemaCode,
   getCinemaByRegionId,
-  getCinemaByMovieIdAndRegionId,
   searchCinemas,
 };

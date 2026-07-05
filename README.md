@@ -156,19 +156,17 @@ All responses follow a standard envelope format:
 
 ### Regions
 
-| Method | Endpoint                 | Description              | Auth  |
-| ------ | ------------------------ | ------------------------ | ----- |
-| POST   | `/api/region/`           | Create a region          | Admin |
-| GET    | `/api/region/`           | Get all regions          | None  |
-| GET    | `/api/region/:city_name` | Find region by city name | None  |
+| Method | Endpoint       | Description     | Auth  |
+| ------ | -------------- | --------------- | ----- |
+| POST   | `/api/region/` | Create a region | Admin |
+| GET    | `/api/region/` | Get all regions | None  |
 
 ### Cinemas
 
-| Method | Endpoint                           | Description                      | Auth  |
-| ------ | ---------------------------------- | -------------------------------- | ----- |
-| POST   | `/api/cinema/`                     | Create a cinema                  | Admin |
-| GET    | `/api/cinema/search`               | Search cinemas                   | None  |
-| GET    | `/api/cinema/:movie_id/:region_id` | Find cinemas by movie and region | None  |
+| Method | Endpoint       | Description     | Auth  |
+| ------ | -------------- | --------------- | ----- |
+| POST   | `/api/cinema/` | Create a cinema | Admin |
+| GET    | `/api/cinema/` | Search cinemas  | None  |
 
 ### Movies
 

@@ -2,6 +2,7 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const Razorpay = require('razorpay');
+const pino_http = require('pino-http');
 
 const errorHandler = require('./middleware/errorHandler.js');
 const AppError = require('./utils/AppError.js');
@@ -41,7 +42,6 @@ const {
   createBookingSeatsTable,
   createBookingTable,
 } = require('./models/bookingModel.js');
-const morgan = require('morgan');
 
 const {
   createSeatsTable,
@@ -55,7 +55,20 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(morgan('combined'));
+const logger = pino_http({
+  level: process.env.LOG_LEVEL || 'info',
+  customLogLevel: (req, res, err) => {
+    if (err || res.statusCode >= 500) {
+      return 'error';
+    }
+    if (res.statusCode >= 400) {
+      return 'warn';
+    }
+    return 'info';
+  },
+});
+
+app.use(logger);
 
 const razorpayInstance = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
