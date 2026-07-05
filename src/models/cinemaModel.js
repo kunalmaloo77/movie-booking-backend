@@ -75,10 +75,14 @@ const getCinemaByRegionId = async (region_id) => {
 };
 
 const searchCinemas = async (data) => {
-  const { region_id, movie_id, q } = data;
+  const { region_id, movie_id, selectedDate, q } = data;
   let conditions = [];
   let values = [];
   let idx = 1;
+  if (selectedDate) {
+    conditions.push(`s.start_time::date = $${idx++} and s.start_time > NOW() `);
+    values.push(selectedDate);
+  }
   if (region_id) {
     conditions.push('r.id = $' + idx++);
     values.push(region_id);
@@ -94,7 +98,13 @@ const searchCinemas = async (data) => {
   const whereClause =
     conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
   const queryText = `
-      SELECT DISTINCT c.id, c.cinema_name
+      SELECT DISTINCT 
+      c.id as cinema_id,
+      c.cinema_name,
+      c.cinema_code,
+      c.address,
+      s.start_time,
+      s.id as show_id
       FROM cinemas as c
       JOIN regions as r ON c.region_id = r.id
       JOIN screens as scr ON c.id = scr.cinema_id
