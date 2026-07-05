@@ -12,12 +12,6 @@ const createCinema = async (req, res) => {
   ApiResponse.success(res, { data: cinema, statusCode: 201 });
 };
 
-const findCinemaByRegionId = async (req, res) => {
-  const { region_id } = req.params;
-  const cinemas = await getCinemaByRegionId(region_id);
-  ApiResponse.success(res, { data: cinemas });
-};
-
 /**
  * Searches resources using query filters.
  */
@@ -39,6 +33,5 @@ const getCinemas = async (req, res) => {
 
 module.exports = {
   createCinema,
-  findCinemaByRegionId,
   getCinemas,
 };

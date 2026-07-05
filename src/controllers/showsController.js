@@ -30,7 +30,7 @@ const {
 const AppError = require('../utils/AppError.js');
 const ApiResponse = require('../utils/ApiResponse.js');
 const db = require('../config/db.js');
-const { findCinemaByShowId } = require('../models/cinemaModel.js');
+
 const {
   fetchLanguages,
   getDefaultLanguageId,
@@ -330,7 +330,12 @@ const updateExistingShow = async (req, res) => {
 
     if (screenChanged) {
       await deleteShowSeatsByShowId(client, show_id);
-      await createShowSeatByScreenId(client, show_id, screen_id, category_price);
+      await createShowSeatByScreenId(
+        client,
+        show_id,
+        screen_id,
+        category_price
+      );
     } else {
       const seats = await findSeatsByScreenId(screen_id);
       const seatPriceRows = seats.map((seat) => {

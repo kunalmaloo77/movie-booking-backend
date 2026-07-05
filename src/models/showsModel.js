@@ -8,7 +8,7 @@ const createShowsTable = async () => {
         screen_id INT NOT NULL REFERENCES screens(id),
         start_time TIMESTAMP WITH TIME ZONE NOT NULL,
         language_id INT NOT NULL REFERENCES languages(id),
-        status VARCHAR(20) NOT NULL DEFAULT 'active',
+        status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
     `;
@@ -58,7 +58,9 @@ const migrateShowsLanguageToFk = async () => {
          WHERE language_id IS NULL;`
       );
 
-      await db.query('ALTER TABLE shows ALTER COLUMN language_id SET NOT NULL;');
+      await db.query(
+        'ALTER TABLE shows ALTER COLUMN language_id SET NOT NULL;'
+      );
       await db.query('ALTER TABLE shows DROP COLUMN IF EXISTS language;');
     }
 
@@ -144,14 +146,14 @@ const updateShowSeatPrices = async (client, show_id, seatPriceRows) => {
 
 const findShowsByScreenId = async (screen_id) => {
   const queryText =
-    'SELECT * FROM shows WHERE screen_id = $1 ORDER BY start_time';
+    "SELECT * FROM shows WHERE screen_id = $1 AND status != 'DELETED' ORDER BY start_time";
   const result = await db.query(queryText, [screen_id]);
   return result.rows;
 };
 
 const findShowsByMovieId = async (movie_id) => {
   const queryText =
-    'SELECT * FROM shows WHERE movie_id = $1 ORDER BY start_time';
+    "SELECT * FROM shows WHERE movie_id = $1 AND status != 'DELETED' ORDER BY start_time";
   const result = await db.query(queryText, [movie_id]);
   return result.rows;
 };
@@ -193,7 +195,7 @@ const findShowByIdForAdmin = async (show_id) => {
     LEFT JOIN show_seats ss ON ss.show_id = s.id
     LEFT JOIN seats seat ON seat.id = ss.seat_id
     LEFT JOIN seat_categories sc ON sc.id = seat.category_id
-    WHERE s.id = $1
+    WHERE s.id = $1 AND s.status != 'DELETED'
     GROUP BY
       s.id,
       s.movie_id,
@@ -245,7 +247,9 @@ const fetchShowsForAdmin = async ({
   }
 
   const whereClause =
-    conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    conditions.length > 0
+      ? `WHERE ${conditions.join(' AND ')} AND s.status != 'DELETED'`
+      : '';
 
   const countQuery = `
     SELECT COUNT(*) AS total
@@ -347,7 +351,7 @@ const findOverlappingShows = async (
     FROM shows s
     JOIN movies m ON s.movie_id = m.id
     WHERE s.screen_id = $1
-      AND s.status != 'cancelled'
+      AND s.status == 'ACTIVE'
       AND ($4::int IS NULL OR s.id != $4)
       AND (
         s.start_time < ($2::timestamptz + ($3 || ' minutes')::interval)
@@ -437,11 +441,11 @@ const findShowDetailsById = async (show_id) => {
     c.cinema_code,
     c.address,
     s.start_time
-    FROM cinemas as c
-    JOIN screens ON c.id = screens.cinema_id
-    JOIN shows as s ON screens.id = s.screen_id
-    WHERE s.id = $1;
-  `
+    FROM shows as s
+    JOIN screens as scr ON s.screen_id = scr.id
+    JOIN cinemas as c ON c.id = scr.cinema_id
+    WHERE s.id = $1 AND s.status != 'DELETED';
+  `;
   const res = await db.query(queryText, [show_id]);
   return res.rows[0];
 };
@@ -459,10 +463,11 @@ const countBookingsForShow = async (client, show_id) => {
 
 const deleteShowById = async (client, show_id) => {
   const result = await client.query(
-    'DELETE FROM shows WHERE id = $1 RETURNING id',
+    "UPDATE shows SET status = 'DELETED' WHERE id = $1",
     [show_id]
   );
-  return result.rows[0] || null;
+
+  return result.rowCount > 0;
 };
 
 module.exports = {
