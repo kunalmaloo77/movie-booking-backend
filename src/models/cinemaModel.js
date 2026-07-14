@@ -98,19 +98,19 @@ const searchCinemas = async (data) => {
   const whereClause =
     conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
   const queryText = `
-      SELECT DISTINCT 
-      c.id as cinema_id,
-      c.cinema_name,
-      c.cinema_code,
-      c.address,
-      s.start_time,
-      s.id as show_id
+      SELECT DISTINCT ON (c.id)
+        c.id as cinema_id,
+        c.cinema_name,
+        c.cinema_code,
+        c.address,
+        s.start_time,
+        s.id as show_id
       FROM cinemas as c
       JOIN regions as r ON c.region_id = r.id
       JOIN screens as scr ON c.id = scr.cinema_id
       JOIN shows as s ON scr.id = s.screen_id
       ${whereClause}
-      ORDER BY c.cinema_name
+      ORDER BY c.id, s.start_time
       LIMIT 10;
     `;
   const result = await db.query(queryText, values);
