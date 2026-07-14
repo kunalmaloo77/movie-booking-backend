@@ -1,5 +1,8 @@
 class ApiResponse {
-  static success(res, { data = null, message = null, statusCode = 200, pagination = null } = {}) {
+  static success(
+    res,
+    { data = null, message = null, statusCode = 200, pagination = null } = {}
+  ) {
     const response = {
       success: true,
       data,
@@ -12,14 +15,15 @@ class ApiResponse {
   }
 
   static error(res, { code, message, statusCode = 500, details = null } = {}) {
-    return res.status(statusCode).json({
+    const response = {
       success: false,
       error: {
         code,
         message,
         details,
       },
-    });
+    };
+    return res.status(statusCode).json(response);
   }
 }
 

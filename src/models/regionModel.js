@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const AppError = require('../utils/AppError.js');
 
 const createRegionTable = async () => {
   const queryText = `
@@ -28,24 +29,21 @@ const createRegion = async (city_code, city_name) => {
   return result.rows[0];
 };
 
-const findRegionByCityName = async (city_name) => {
-  const queryText = 'SELECT * FROM regions WHERE LOWER(city_name) = LOWER($1)';
-  const result = await db.query(queryText, [city_name]);
-  return result.rows[0];
-};
+const PAGE_LIMIT = 10;
 
-const PAGE_LIMIT = 20;
-
-const findAllRegions = async (search = null, page = 1) => {
+const findRegions = async (search = null, page = 1) => {
   const offset = (page - 1) * PAGE_LIMIT;
-  const values = search ? [`%${search}%`, search] : [];
+  const values = search ? [`%${search}%`] : [];
   const whereClause = search
-    ? `WHERE city_name ILIKE $1 OR city_code = $2`
+    ? 'WHERE city_name ILIKE $1 OR city_code ILIKE $1'
     : '';
 
   const queryText = `
-    SELECT id, city_code, city_name, created_at, COUNT(*) OVER() AS total_count FROM regions
-    ${whereClause} LIMIT $${values.length + 1} OFFSET $${values.length + 2};
+    SELECT id, city_code, city_name, created_at, COUNT(*) OVER() AS total_count
+    FROM regions
+    ${whereClause}
+    ORDER BY created_at DESC, id DESC
+    LIMIT $${values.length + 1} OFFSET $${values.length + 2};
   `;
 
   values.push(PAGE_LIMIT, offset);
@@ -68,9 +66,42 @@ const findAllRegions = async (search = null, page = 1) => {
   };
 };
 
+const updateRegion = async (id, new_city_code, new_city_name) => {
+  const queryText = `
+    UPDATE regions
+    SET city_code = $1, city_name = $2
+    WHERE id = $3
+    RETURNING id, city_code, city_name, created_at;
+  `;
+  const values = [new_city_code, new_city_name, id];
+  const result = await db.query(queryText, values);
+
+  if (result.rowCount === 0) {
+    throw new AppError('NOT_FOUND', 'Region not found', 404);
+  }
+
+  return result.rows[0];
+};
+
+const deleteRegion = async (id) => {
+  const queryText = `
+    DELETE FROM regions
+    WHERE id = $1
+    RETURNING id, city_code, city_name;
+  `;
+  const result = await db.query(queryText, [id]);
+
+  if (result.rowCount === 0) {
+    throw new AppError('NOT_FOUND', 'Region not found', 404);
+  }
+
+  return result.rows[0];
+};
+
 module.exports = {
   createRegionTable,
   createRegion,
-  findRegionByCityName,
-  findAllRegions,
+  findRegions,
+  updateRegion,
+  deleteRegion,
 };

@@ -1,8 +1,7 @@
 const {
   createCinema: createCinemaModel,
   getCinemaByRegionId,
-  getCinemaByMovieIdAndRegionId,
-  searchCinemas: searchCinemasModel,
+  searchCinemas,
 } = require('../models/cinemaModel.js');
 const AppError = require('../utils/AppError.js');
 const ApiResponse = require('../utils/ApiResponse.js');
@@ -13,43 +12,26 @@ const createCinema = async (req, res) => {
   ApiResponse.success(res, { data: cinema, statusCode: 201 });
 };
 
-const findCinemaByRegionId = async (req, res) => {
-  const { region_id } = req.params;
-  const cinemas = await getCinemaByRegionId(region_id);
-  ApiResponse.success(res, { data: cinemas });
-};
-
-const findCinemaByMovieIdAndRegionId = async (req, res) => {
-  const { region_id, movie_id } = req.params;
-  const { selectedDate } = req.query
-  const cinemas = await getCinemaByMovieIdAndRegionId(region_id, movie_id, selectedDate);
-  ApiResponse.success(res, { data: cinemas });
-};
-
-const searchCinemas = async (req, res) => {
-  let { region_id, q } = req.query;
-
-  if (q && typeof q !== 'string') {
-    throw new AppError('VALIDATION_ERROR', 'Invalid q parameter', 400);
-  }
-
-  if (region_id && isNaN(parseInt(region_id))) {
-    throw new AppError('VALIDATION_ERROR', 'Invalid region_id parameter', 400);
-  }
+/**
+ * Searches resources using query filters.
+ */
+const getCinemas = async (req, res) => {
+  let { q, region_id, movie_id, selectedDate } = req.query;
 
   const normalizedQ = q && q.trim().length >= 2 ? q.trim() : null;
 
-  if (!region_id && !normalizedQ) {
-    return ApiResponse.success(res, { data: [] });
-  }
+  const data = {
+    region_id: region_id ? parseInt(region_id) : null,
+    movie_id: movie_id ? parseInt(movie_id) : null,
+    selectedDate: selectedDate,
+    q: normalizedQ,
+  };
 
-  const cinemas = await searchCinemasModel(region_id, normalizedQ);
+  const cinemas = await searchCinemas(data);
   ApiResponse.success(res, { data: cinemas });
 };
 
 module.exports = {
   createCinema,
-  findCinemaByRegionId,
-  findCinemaByMovieIdAndRegionId,
-  searchCinemas,
+  getCinemas,
 };

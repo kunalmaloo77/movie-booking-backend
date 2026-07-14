@@ -19,7 +19,11 @@ const createNewBooking = async (req, res) => {
     !Array.isArray(seat_ids) ||
     seat_ids.length === 0
   ) {
-    throw new AppError('VALIDATION_ERROR', 'Missing or invalid required fields', 400);
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'Missing or invalid required fields',
+      400
+    );
   }
 
   const show = await findShowById(show_id);
@@ -30,12 +34,25 @@ const createNewBooking = async (req, res) => {
     throw new AppError('BAD_REQUEST', 'This show has been cancelled', 400);
   }
   if (new Date(show.start_time) <= new Date()) {
-    throw new AppError('BAD_REQUEST', 'Cannot book seats for a show that has already started', 400);
+    throw new AppError(
+      'BAD_REQUEST',
+      'Cannot book seats for a show that has already started',
+      400
+    );
   }
 
   const razorpayInstance = req.app.get('razorpay');
   try {
     const show_seat_ids = await findShowSeatIds(show_id, seat_ids);
+    // Every requested seat must exist for this show — otherwise the user
+    // would silently book (and pay for) fewer seats than they selected
+    if (show_seat_ids.length !== seat_ids.length) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'One or more seats do not exist for this show',
+        400
+      );
+    }
     const result = await createBooking(
       user_id,
       show_id,
@@ -55,8 +72,15 @@ const createNewBooking = async (req, res) => {
       statusCode: 201,
     });
   } catch (err) {
+    if (err instanceof AppError) {
+      throw err;
+    }
     console.error('BOOKING ERROR:', err);
-    throw new AppError('BOOKING', 'Something went wrong while creating booking', 500);
+    throw new AppError(
+      'BOOKING',
+      'Something went wrong while creating booking',
+      500
+    );
   }
 };
 
@@ -66,7 +90,11 @@ const verifyBookingPayment = async (req, res) => {
     req.body;
 
   if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-    throw new AppError('VALIDATION_ERROR', 'Missing payment verification fields', 400);
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'Missing payment verification fields',
+      400
+    );
   }
 
   // Verify Razorpay signature
@@ -116,8 +144,13 @@ const razorpayWebhook = async (req, res) => {
     try {
       await confirmBooking(order_id, payment_id);
     } catch (error) {
-      // Already confirmed by client-side verify — idempotent, safe to ignore
-      if (error.statusCode !== 410 && error.statusCode !== 404) {
+      if (error.statusCode === 410) {
+        // Payment captured but reservation expired — money was taken with no
+        // booking to show for it. Needs a refund.
+        console.error(
+          `REFUND NEEDED: payment ${payment_id} captured for expired order ${order_id}`
+        );
+      } else if (error.statusCode !== 404) {
         console.error('Webhook confirmBooking error:', error);
       }
     }

@@ -28,18 +28,21 @@ const createBookingSeatsTable = async () => {
   await db.query(queryText);
 };
 
+const getReservationMinutes = () =>
+  parseInt(process.env.RESERVATION_MINUTES, 10) || 5;
+
 // Called by setInterval — releases seats whose reservation window has expired
 const releaseExpiredReservations = async () => {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-
-    const reservationMinutes =
-      parseInt(process.env.RESERVATION_MINUTES, 10) || 5;
+    const reservationMinutes = getReservationMinutes();
+    // here || means concatenate
     const expired = await client.query(
       `SELECT id FROM bookings
        WHERE status = 'CREATED'
-         AND created_at < NOW() - ($1 || ' minutes')::interval`,
+         AND created_at < NOW() - ($1 || ' minutes')::interval
+       FOR UPDATE SKIP LOCKED`,
       [reservationMinutes]
     );
 
@@ -50,7 +53,7 @@ const releaseExpiredReservations = async () => {
 
     const expiredIds = expired.rows.map((r) => r.id);
 
-    // Release seats back to available
+    // Release seats back to available.
     await client.query(
       `
       UPDATE show_seats ss
@@ -58,6 +61,8 @@ const releaseExpiredReservations = async () => {
       FROM booking_seats bs
       WHERE bs.show_seats_id = ss.id
         AND bs.booking_id = ANY($1::int[])
+        AND ss.status = 'reserved'
+        AND ss.reserved_until < NOW()
     `,
       [expiredIds]
     );
@@ -81,20 +86,67 @@ const releaseExpiredReservations = async () => {
   }
 };
 
-// Creates a Razorpay order, reserves seats, and inserts a pending booking
+// Releases a just-created pending booking (e.g. Razorpay order creation failed).
+// Safe: the reservation window is still active, so the seats belong to this booking.
+const cancelPendingBooking = async (bookingId) => {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const result = await client.query(
+      `SELECT id, status FROM bookings WHERE id = $1 FOR UPDATE`,
+      [bookingId]
+    );
+    if (result.rows.length === 0 || result.rows[0].status !== 'CREATED') {
+      await client.query('ROLLBACK');
+      return;
+    }
+
+    await client.query(
+      `UPDATE show_seats ss
+       SET status = 'available', reserved_until = NULL
+       FROM booking_seats bs
+       WHERE bs.show_seats_id = ss.id
+         AND bs.booking_id = $1
+         AND ss.status = 'reserved'`,
+      [bookingId]
+    );
+    await client.query(`UPDATE bookings SET status = 'EXPIRED' WHERE id = $1`, [
+      bookingId,
+    ]);
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    // Non-fatal: the expiry sweeper will clean this booking up anyway
+    console.error('Error cancelling pending booking:', error);
+  } finally {
+    client.release();
+  }
+};
+
+// Reserves seats and inserts a pending booking, then creates the Razorpay order.
+// The order is created OUTSIDE the transaction so a slow/hung payment-gateway
+// call never holds row locks or a pool connection hostage.
 const createBooking = async (
   user_id,
   show_id,
   show_seat_ids,
   razorpayInstance
 ) => {
+  const reservationMinutes = getReservationMinutes();
+  let bookingId;
+  let totalAmount;
+  let reservedUntil;
+
+  // Phase 1: short transaction — lock seats, reserve, insert pending booking
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
 
-    const reservationMinutes = process.env.RESERVATION_MINUTES || 10;
-
     // Lock rows and check seats are available (not booked or reserved by someone else)
+    // Currently, I am checking if the seat is available for all the seats that I get from the booking API.
+    // I can't book just one seat and leave other seats remaining because one may have plans to watch a movie with the family, but he doesn't want to go alone. That's why.
     const availabilityCheck = await client.query(
       `SELECT id, seat_id, price FROM show_seats
        WHERE show_id = $1
@@ -114,18 +166,12 @@ const createBooking = async (
     }
 
     // Calculate total amount from seat prices
-    const totalAmount = availabilityCheck.rows.reduce(
+    totalAmount = availabilityCheck.rows.reduce(
       (sum, row) => sum + parseFloat(row.price),
       0
     );
 
-    // Create Razorpay order (amount in paise)
-    const razorpayOrder = await razorpayInstance.orders.create({
-      amount: Math.round(totalAmount * 100),
-      currency: 'INR',
-    });
-
-    const reservedUntil = new Date(Date.now() + reservationMinutes * 60 * 1000);
+    reservedUntil = new Date(Date.now() + reservationMinutes * 60 * 1000);
 
     // Reserve seats with expiry timestamp
     await client.query(
@@ -135,14 +181,14 @@ const createBooking = async (
       [reservedUntil, show_id, show_seat_ids]
     );
 
-    // Insert booking record
+    // Insert booking record (order id attached after the gateway call succeeds)
     const result = await client.query(
-      `INSERT INTO bookings (user_id, show_id, razorpay_order_id, status, amount)
-       VALUES ($1, $2, $3, 'CREATED', $4)
+      `INSERT INTO bookings (user_id, show_id, status, amount)
+       VALUES ($1, $2, 'CREATED', $3)
        RETURNING id`,
-      [user_id, show_id, razorpayOrder.id, totalAmount]
+      [user_id, show_id, totalAmount]
     );
-    const bookingId = result.rows[0].id;
+    bookingId = result.rows[0].id;
 
     // Link seats to booking
     const seatValues = show_seat_ids
@@ -155,20 +201,42 @@ const createBooking = async (
     );
 
     await client.query('COMMIT');
-
-    return {
-      bookingId,
-      razorpayOrderId: razorpayOrder.id,
-      amount: totalAmount,
-      currency: 'INR',
-      reservedUntil,
-    };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
   } finally {
     client.release();
   }
+
+  // Phase 2: create Razorpay order (amount in paise) with no locks held
+  let razorpayOrder;
+  try {
+    razorpayOrder = await razorpayInstance.orders.create({
+      amount: Math.round(totalAmount * 100),
+      currency: 'INR',
+    });
+
+    await db.query(`UPDATE bookings SET razorpay_order_id = $1 WHERE id = $2`, [
+      razorpayOrder.id,
+      bookingId,
+    ]);
+  } catch (error) {
+    console.error('Razorpay order creation failed:', error);
+    await cancelPendingBooking(bookingId);
+    throw new AppError(
+      'PAYMENT_GATEWAY',
+      'Failed to create payment order. Seats have been released.',
+      502
+    );
+  }
+
+  return {
+    bookingId,
+    razorpayOrderId: razorpayOrder.id,
+    amount: totalAmount,
+    currency: 'INR',
+    reservedUntil,
+  };
 };
 
 // Confirms booking after payment — idempotent
@@ -178,8 +246,10 @@ const confirmBooking = async (razorpayOrderId, razorpayPaymentId) => {
     await client.query('BEGIN');
 
     const bookingResult = await client.query(
-      `SELECT id, status FROM bookings WHERE razorpay_order_id = $1 FOR UPDATE`,
-      [razorpayOrderId]
+      `SELECT id, status,
+              (created_at < NOW() - ($2 || ' minutes')::interval) AS is_expired
+       FROM bookings WHERE razorpay_order_id = $1 FOR UPDATE`,
+      [razorpayOrderId, getReservationMinutes()]
     );
 
     if (bookingResult.rows.length === 0) {
@@ -195,7 +265,10 @@ const confirmBooking = async (razorpayOrderId, razorpayPaymentId) => {
       return booking.id;
     }
 
-    if (booking.status === 'EXPIRED') {
+    // Reject payments landing after the reservation window — the seats may
+    // have been re-reserved or booked by someone else in the meantime.
+    // The sweeper will mark the booking EXPIRED and release its seats.
+    if (booking.status === 'EXPIRED' || booking.is_expired) {
       await client.query('ROLLBACK');
       throw new AppError('GONE', 'Booking reservation has expired', 410);
     }
@@ -243,8 +316,10 @@ const failBooking = async (razorpayOrderId) => {
     await client.query('BEGIN');
 
     const bookingResult = await client.query(
-      `SELECT id, status FROM bookings WHERE razorpay_order_id = $1 FOR UPDATE`,
-      [razorpayOrderId]
+      `SELECT id, status,
+              (created_at < NOW() - ($2 || ' minutes')::interval) AS is_expired
+       FROM bookings WHERE razorpay_order_id = $1 FOR UPDATE`,
+      [razorpayOrderId, getReservationMinutes()]
     );
 
     if (bookingResult.rows.length === 0) {
@@ -260,13 +335,18 @@ const failBooking = async (razorpayOrderId) => {
       return;
     }
 
-    // Release seats back to available
+    // Release seats back to available. If the reservation window has already
+    // lapsed, only release seats still carrying an expired window — a future
+    // reserved_until means another user re-reserved them.
     await client.query(
       `UPDATE show_seats ss
        SET status = 'available', reserved_until = NULL
        FROM booking_seats bs
-       WHERE bs.show_seats_id = ss.id AND bs.booking_id = $1`,
-      [booking.id]
+       WHERE bs.show_seats_id = ss.id
+         AND bs.booking_id = $1
+         AND ss.status = 'reserved'
+         AND ($2::boolean = false OR ss.reserved_until < NOW())`,
+      [booking.id, booking.is_expired]
     );
 
     await client.query(
@@ -326,6 +406,24 @@ const fetchBookingsByUserId = async (user_id) => {
   return res.rows;
 };
 
+const fetchAdminRevenue = async () => {
+  const queryText = `
+    select
+      regions.city_name,
+      sum(bookings.amount) as total_revenue,
+      count(bookings) as number_of_tickets
+      from bookings
+      join shows on bookings.show_id = shows.id
+      join screens on shows.screen_id = screens.id
+      join cinemas on screens.cinema_id = cinemas.id
+      join regions on regions.id = cinemas.region_id
+      where bookings.status = 'PAYMENT_SUCCESS'
+      group by (regions.id);
+  `;
+  const res = await db.query(queryText);
+  return res.rows;
+};
+
 module.exports = {
   createBookingTable,
   createBookingSeatsTable,
@@ -334,4 +432,5 @@ module.exports = {
   failBooking,
   fetchBookingsByUserId,
   releaseExpiredReservations,
+  fetchAdminRevenue,
 };

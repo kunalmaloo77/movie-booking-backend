@@ -3,12 +3,17 @@ const jwt = require('jsonwebtoken');
 const { findUserByEmailOrUsername } = require('../models/userModel');
 const AppError = require('../utils/AppError');
 const ApiResponse = require('../utils/ApiResponse');
+const { fetchAdminRevenue } = require('../models/bookingModel');
 
 const adminLogin = async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    throw new AppError('VALIDATION_ERROR', 'Please provide email and password', 400);
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'Please provide email and password',
+      400
+    );
   }
 
   const user = await findUserByEmailOrUsername(email);
@@ -45,4 +50,16 @@ const adminLogin = async (req, res) => {
   });
 };
 
-module.exports = { adminLogin };
+const getAdminRevenue = async (req, res) => {
+  try {
+    const revenue = await fetchAdminRevenue();
+    ApiResponse.success(res, {
+      data: revenue,
+      message: 'Successfully fetched revenue',
+    });
+  } catch (error) {
+    throw new AppError('INTERNAL_SERVER_ERROR', 'Server Error', 500);
+  }
+};
+
+module.exports = { adminLogin, getAdminRevenue };
