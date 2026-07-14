@@ -34,8 +34,10 @@ const adminVerification = async (req, res, next) => {
   verifyToken(req, res, async (err) => {
     if (err) return next(err);
     try {
+      // DB is the source of truth — a stale token claiming ADMIN must not
+      // outrank a role change
       const userRole = await getUserRoleFromId(req.user.id);
-      if (userRole !== 'ADMIN' && req.user.role !== 'ADMIN') {
+      if (userRole !== 'ADMIN') {
         return next(
           new AppError('FORBIDDEN', 'Access denied. Admin role required.', 403)
         );

@@ -224,7 +224,7 @@ const fetchShowsForAdmin = async ({
   region_id = null,
   cinema_id = null,
 }) => {
-  const conditions = [];
+  const conditions = ["s.status != 'DELETED'"];
   const values = [];
   let idx = 1;
 
@@ -246,10 +246,7 @@ const fetchShowsForAdmin = async ({
     values.push(cinema_id);
   }
 
-  const whereClause =
-    conditions.length > 0
-      ? `WHERE ${conditions.join(' AND ')} AND s.status != 'DELETED'`
-      : '';
+  const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
   const countQuery = `
     SELECT COUNT(*) AS total
@@ -351,7 +348,7 @@ const findOverlappingShows = async (
     FROM shows s
     JOIN movies m ON s.movie_id = m.id
     WHERE s.screen_id = $1
-      AND s.status == 'ACTIVE'
+      AND s.status = 'ACTIVE'
       AND ($4::int IS NULL OR s.id != $4)
       AND (
         s.start_time < ($2::timestamptz + ($3 || ' minutes')::interval)
