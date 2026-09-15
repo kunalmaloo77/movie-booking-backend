@@ -49,18 +49,18 @@ const getMoviesFromRegion = async (page = 1, region_id) => {
   const values = [region_id, PAGE_LIMIT, offset];
   try {
     const queryText = `
-    SELECT m.id, m.title, m.poster_image_url, m.backdrop_image_url, m.rating, m.overview, m.adult, m.created_at, 
-          STRING_AGG(DISTINCT g.name, ', ') AS genres
-          FROM movies m
-          JOIN genre_movies gm ON m.id = gm.movie_id
-          JOIN genres g ON gm.genre_id = g.id
-          JOIN shows s ON m.id = s.movie_id AND s.start_time > NOW()
-          JOIN screens sc ON s.screen_id = sc.id
-          JOIN cinemas c ON sc.cinema_id = c.id
-          WHERE c.region_id = $1
-		  GROUP BY m.id, m.title, m.poster_image_url, m.backdrop_image_url, m.rating, m.overview, m.adult
-          ORDER BY m.created_at DESC
-          LIMIT $2 OFFSET $3;
+      SELECT m.id, m.title, m.poster_image_url, m.backdrop_image_url, m.rating, m.overview, m.adult, m.created_at, 
+      STRING_AGG(DISTINCT g.name, ', ') AS genres
+      FROM movies m
+      JOIN genre_movies gm ON m.id = gm.movie_id
+      JOIN genres g ON gm.genre_id = g.id
+      JOIN shows s ON m.id = s.movie_id AND s.start_time > NOW()
+      JOIN screens sc ON s.screen_id = sc.id
+      JOIN cinemas c ON sc.cinema_id = c.id
+      WHERE c.region_id = $1
+      GROUP BY m.id, m.title, m.poster_image_url, m.backdrop_image_url, m.rating, m.overview, m.adult
+      ORDER BY m.created_at DESC
+      LIMIT $2 OFFSET $3;
     `;
     const result = await db.query(queryText, values);
     const totalPages = Math.ceil(result.rows.length / PAGE_LIMIT);

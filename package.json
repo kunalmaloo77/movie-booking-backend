@@ -11,7 +11,8 @@
     "migrate": "node-pg-migrate",
     "movie-seed": "node scripts/movieDump.js",
     "seed": "node scripts/seedMockData.js",
-    "seed:reset": "node scripts/seedMockData.js --reset"
+    "seed:reset": "node scripts/seedMockData.js --reset",
+    "seed:shows-by-region": "node scripts/seedShowsByRegion.js"
   },
   "keywords": [],
   "author": "",
@@ -33,3 +34,4 @@
     "pino-pretty": "^13.1.3"
   }
 }
+

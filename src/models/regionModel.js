@@ -29,9 +29,8 @@ const createRegion = async (city_code, city_name) => {
   return result.rows[0];
 };
 
-const PAGE_LIMIT = 10;
-
-const findRegions = async (search = null, page = 1) => {
+const findRegions = async (search = null, page = 1, limit = 10) => {
+  const PAGE_LIMIT = limit;
   const offset = (page - 1) * PAGE_LIMIT;
   const values = search ? [`%${search}%`] : [];
   const whereClause = search

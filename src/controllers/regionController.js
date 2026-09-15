@@ -25,9 +25,11 @@ const createRegionController = async (req, res) => {
 const findRegionsController = async (req, res) => {
   const search = req.query.q || null;
   const page = Number.parseInt(req.query.page, 10) || 1;
+  const limit = req.query.limit;
   const { total_pages, current_page, total_regions, data } = await findRegions(
     search,
-    page
+    page,
+    limit
   );
   ApiResponse.success(res, {
     data,

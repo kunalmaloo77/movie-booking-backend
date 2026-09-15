@@ -79,24 +79,33 @@ const searchCinemas = async (data) => {
   let conditions = [];
   let values = [];
   let idx = 1;
+
+  // Conditions attached directly to the shows table join
+  let showConditions = ['s.start_time > NOW()'];
+
   if (selectedDate) {
-    conditions.push(`s.start_time::date = $${idx++} and s.start_time > NOW() `);
+    showConditions.push(`s.start_time::date = $${idx++}`);
     values.push(selectedDate);
   }
-  if (region_id) {
-    conditions.push('r.id = $' + idx++);
-    values.push(region_id);
-  }
   if (movie_id) {
-    conditions.push('s.movie_id = $' + idx++);
+    showConditions.push(`s.movie_id = $${idx++}`);
     values.push(movie_id);
   }
+
+  // General cinema/region conditions
+  if (region_id) {
+    conditions.push(`r.id = $${idx++}`);
+    values.push(region_id);
+  }
   if (q) {
-    conditions.push('c.cinema_name ILIKE $' + idx++);
+    conditions.push(`c.cinema_name ILIKE $${idx++}`);
     values.push(`%${q}%`);
   }
+
   const whereClause =
     conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+  const showJoinClause = showConditions.join(' AND ');
+
   const queryText = `
       SELECT DISTINCT ON (c.id)
         c.id as cinema_id,
@@ -106,13 +115,14 @@ const searchCinemas = async (data) => {
         s.start_time,
         s.id as show_id
       FROM cinemas as c
-      JOIN regions as r ON c.region_id = r.id
-      JOIN screens as scr ON c.id = scr.cinema_id
-      JOIN shows as s ON scr.id = s.screen_id
+      LEFT JOIN regions as r ON c.region_id = r.id
+      LEFT JOIN screens as scr ON c.id = scr.cinema_id
+      LEFT JOIN shows as s ON scr.id = s.screen_id AND ${showJoinClause}
       ${whereClause}
       ORDER BY c.id, s.start_time
       LIMIT 10;
     `;
+
   const result = await db.query(queryText, values);
   return result.rows;
 };
