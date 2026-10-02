@@ -21,7 +21,6 @@ const createCinemaTable = async () => {
 };
 
 const createCinema = async (cinema_name, address, city_code) => {
-  // Generate a random cinema code
   const maxRetries = 3;
   let attempts = 0;
   while (attempts < maxRetries) {
@@ -43,7 +42,7 @@ const createCinema = async (cinema_name, address, city_code) => {
     } catch (error) {
       if (error.code === '23505' && attempts < maxRetries - 1) {
         attempts++;
-        continue; // retry with new code
+        continue;
       }
       throw error;
     }
@@ -75,24 +74,22 @@ const getCinemaByRegionId = async (region_id) => {
 };
 
 const searchCinemas = async (data) => {
-  const { region_id, movie_id, selectedDate, q } = data;
+  const { region_id, movie_id, selected_date, q } = data;
   let conditions = [];
   let values = [];
   let idx = 1;
 
-  // Conditions attached directly to the shows table join
   let showConditions = ['s.start_time > NOW()'];
 
-  if (selectedDate) {
+  if (selected_date) {
     showConditions.push(`s.start_time::date = $${idx++}`);
-    values.push(selectedDate);
+    values.push(selected_date);
   }
   if (movie_id) {
     showConditions.push(`s.movie_id = $${idx++}`);
     values.push(movie_id);
   }
 
-  // General cinema/region conditions
   if (region_id) {
     conditions.push(`r.id = $${idx++}`);
     values.push(region_id);
@@ -117,9 +114,11 @@ const searchCinemas = async (data) => {
       FROM cinemas as c
       LEFT JOIN regions as r ON c.region_id = r.id
       LEFT JOIN screens as scr ON c.id = scr.cinema_id
-      LEFT JOIN shows as s ON scr.id = s.screen_id AND ${showJoinClause}
-      ${whereClause}
-      ORDER BY c.id, s.start_time
+      LEFT JOIN shows as s 
+        ON scr.id = s.screen_id 
+        ${whereClause}
+        AND ${showJoinClause}
+      ORDER BY c.id, s.start_time NULLS LAST
       LIMIT 10;
     `;
 

@@ -17,38 +17,6 @@ const screenRoutes = require('./routes/screenRoutes.js');
 const seatRoutes = require('./routes/seatRoutes.js');
 const bookingRoutes = require('./routes/bookingRoutes.js');
 
-const { createUserTable } = require('./models/userModel.js');
-const { createRegionTable } = require('./models/regionModel.js');
-const { createCinemaTable } = require('./models/cinemaModel.js');
-const {
-  createScreensTable,
-  createScreensTypeTable,
-} = require('./models/screenModel.js');
-const {
-  createMoviesTable,
-  createGenreTable,
-  createGenreMovieTable,
-} = require('./models/moviesModel.js');
-const {
-  createShowsTable,
-  createShowSeatsTable,
-  migrateShowsLanguageToFk,
-} = require('./models/showsModel.js');
-const {
-  createLanguagesTable,
-  seedLanguages,
-} = require('./models/languageModel.js');
-const {
-  createBookingSeatsTable,
-  createBookingTable,
-  releaseExpiredReservations,
-} = require('./models/bookingModel.js');
-
-const {
-  createSeatsTable,
-  createSeatCategoriesTable,
-} = require('./models/seatModel.js');
-
 const db = require('./config/db.js');
 
 dotenv.config();
@@ -124,28 +92,6 @@ app.use(errorHandler);
 
 const startServer = async () => {
   try {
-    await createRegionTable();
-    await createUserTable();
-    await createCinemaTable();
-    await createScreensTypeTable();
-    await createScreensTable();
-    await createMoviesTable();
-    await createGenreTable();
-    await createGenreMovieTable();
-    await createLanguagesTable();
-    await seedLanguages();
-    await createShowsTable();
-    await migrateShowsLanguageToFk();
-    await createSeatCategoriesTable();
-    await createSeatsTable();
-    await createShowSeatsTable();
-    await createBookingTable();
-    await createBookingSeatsTable();
-
-    // Sweep expired seat reservations — run once at boot, then every minute
-    releaseExpiredReservations();
-    setInterval(releaseExpiredReservations, 60 * 1000);
-
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });

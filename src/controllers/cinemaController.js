@@ -16,14 +16,14 @@ const createCinema = async (req, res) => {
  * Searches resources using query filters.
  */
 const getCinemas = async (req, res) => {
-  let { q, region_id, movie_id, selectedDate } = req.query;
+  let { q, region_id, movie_id, selected_date } = req.query;
 
   const normalizedQ = q && q.trim().length >= 2 ? q.trim() : null;
 
   const data = {
     region_id: region_id ? parseInt(region_id) : null,
     movie_id: movie_id ? parseInt(movie_id) : null,
-    selectedDate: selectedDate,
+    selected_date: selected_date,
     q: normalizedQ,
   };
 
