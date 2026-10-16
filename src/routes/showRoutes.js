@@ -2,6 +2,7 @@ const express = require('express');
 const { adminVerification } = require('../middleware/authMiddleware.js');
 const {
   createNewShow,
+  bulkCreateShows,
   getShows,
   getShowsByScreenId,
   getShowsByMovieId,
@@ -14,6 +15,7 @@ const {
 const router = express.Router();
 
 router.post('/', adminVerification, createNewShow);
+router.post('/bulk', adminVerification, bulkCreateShows);
 router.get('/', adminVerification, getShows);
 router.get('/languages', getLanguages);
 router.get('/screen/:screen_id', getShowsByScreenId);

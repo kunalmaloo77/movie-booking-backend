@@ -43,6 +43,14 @@ const fieldLabels = {
   category_price: 'Category Price',
 };
 
+const bulkFieldLabels = {
+  movie_id: 'Movie ID',
+  screen_id: 'Screen ID',
+  category_price: 'Category Price',
+};
+
+const MAX_BULK_SHOWS = 500;
+
 const validateShowPayload = (body) => {
   const missingFields = Object.keys(fieldLabels).filter((field) => {
     const value = body[field];
@@ -70,16 +78,65 @@ const validateShowPayload = (body) => {
   }
 };
 
-const createShowSeatByScreenId = async (
-  client,
-  show_id,
-  screen_id,
-  category_price
-) => {
-  const seats = await findSeatsByScreenId(screen_id);
-  const seatPriceRows = seats.map((seat) => {
+const validateBulkShowPayload = (body) => {
+  const missingFields = Object.keys(bulkFieldLabels).filter((field) => {
+    const value = body[field];
+    return value === undefined || value === null || value === '';
+  });
+
+  if (missingFields.length > 0) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'Missing required fields',
+      400,
+      missingFields.map((field) => ({
+        field,
+        message: `${bulkFieldLabels[field]} is required`,
+      }))
+    );
+  }
+
+  if (!Array.isArray(body.category_price) || body.category_price.length === 0) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'At least one seat category price is required.',
+      400
+    );
+  }
+
+  if (!Array.isArray(body.start_times) || body.start_times.length === 0) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'At least one start_time is required.',
+      400
+    );
+  }
+
+  if (body.start_times.length > MAX_BULK_SHOWS) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      `Cannot create more than ${MAX_BULK_SHOWS} shows in a single batch.`,
+      400
+    );
+  }
+
+  const invalid = body.start_times.filter(
+    (t) => Number.isNaN(new Date(t).getTime())
+  );
+  if (invalid.length > 0) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'One or more start_time values are invalid.',
+      400,
+      invalid
+    );
+  }
+};
+
+const buildSeatPriceRows = (seats, category_price) => {
+  return seats.map((seat) => {
     const price = category_price.find(
-      (cat) => cat.category_id === seat.category_id
+      (cat) => Number(cat.category_id) === Number(seat.category_id)
     )?.price;
     if (price === undefined || price === null) {
       throw new AppError(
@@ -90,6 +147,16 @@ const createShowSeatByScreenId = async (
     }
     return { seat_id: seat.id, price };
   });
+};
+
+const createShowSeatByScreenId = async (
+  client,
+  show_id,
+  screen_id,
+  category_price
+) => {
+  const seats = await findSeatsByScreenId(screen_id);
+  const seatPriceRows = buildSeatPriceRows(seats, category_price);
   const showSeats = await batchCreateShowSeats(client, show_id, seatPriceRows);
   console.log(`Created ${showSeats.length} show seats for show_id ${show_id}`);
   return showSeats;
@@ -103,16 +170,15 @@ const createNewShow = async (req, res) => {
     const { movie_id, screen_id, start_time, category_price, language_id } =
       req.body;
 
-    // Language defaults to English when not supplied (app-layer default — a FK
-    // column cannot carry a literal default value).
     const resolvedLanguageId = language_id || (await getDefaultLanguageId());
 
     let runtime = await getMovieRuntimeById(movie_id);
 
     if (!runtime) {
       const tmdb_id = await getTMDBIdByMovieId(movie_id);
-      if (tmdb_id) await fetchAndUpdateMovieRuntime(tmdb_id);
-      runtime = await getMovieRuntimeById(movie_id);
+      if (tmdb_id) {
+        runtime = await fetchAndUpdateMovieRuntime(tmdb_id);
+      }
     }
 
     if (!runtime) {
@@ -160,6 +226,115 @@ const createNewShow = async (req, res) => {
   }
 };
 
+const bulkCreateShows = async (req, res) => {
+  validateBulkShowPayload(req.body);
+
+  const { movie_id, screen_id, category_price, language_id } = req.body;
+  const uniqueStartTimes = [...new Set(req.body.start_times)].sort();
+
+  const resolvedLanguageId = language_id || (await getDefaultLanguageId());
+
+  let runtime = await getMovieRuntimeById(movie_id);
+  if (!runtime) {
+    const tmdb_id = await getTMDBIdByMovieId(movie_id);
+    if (tmdb_id) {
+      runtime = await fetchAndUpdateMovieRuntime(tmdb_id);
+    }
+  }
+  if (!runtime) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'Movie runtime is required to check for show overlaps. Please ensure the movie has a runtime set.',
+      400
+    );
+  }
+
+  // Resolved once for the whole batch — identical for every generated show.
+  const seats = await findSeatsByScreenId(screen_id);
+  const seatPriceRows = buildSeatPriceRows(seats, category_price);
+
+  const results = [];
+
+  // Sequential on purpose: each iteration's overlap check must see shows
+  // committed earlier in this same loop, otherwise two close-together
+  // generated times could both pass the overlap check in a race.
+  for (const start_time of uniqueStartTimes) {
+    let client;
+    try {
+      client = await db.pool.connect();
+      await client.query('BEGIN');
+
+      const overlapping = await findOverlappingShows(
+        client,
+        screen_id,
+        start_time,
+        runtime
+      );
+      if (overlapping.length > 0) {
+        const conflict = overlapping[0];
+        throw new AppError(
+          'CONFLICT',
+          `Show time conflicts with "${conflict.title}" starting at ${conflict.start_time} (runtime: ${conflict.runtime} min).`,
+          409,
+          {
+            conflicting_show_id: conflict.id,
+            conflicting_title: conflict.title,
+            conflicting_start_time: conflict.start_time,
+            conflicting_runtime: conflict.runtime,
+          }
+        );
+      }
+
+      const show = await createShow(
+        client,
+        movie_id,
+        screen_id,
+        start_time,
+        resolvedLanguageId
+      );
+      await batchCreateShowSeats(client, show.id, seatPriceRows);
+
+      await client.query('COMMIT');
+      results.push({ start_time, status: 'CREATED', show_id: show.id });
+    } catch (err) {
+      if (client) await client.query('ROLLBACK');
+      if (err instanceof AppError) {
+        results.push({
+          start_time,
+          status: 'FAILED',
+          error: { code: err.code, message: err.message, details: err.details },
+        });
+      } else {
+        console.error('Error creating bulk show for start_time', start_time, err);
+        results.push({
+          start_time,
+          status: 'FAILED',
+          error: {
+            code: 'SERVER_ERROR',
+            message: 'Something went wrong creating this show.',
+          },
+        });
+      }
+    } finally {
+      if (client) client.release();
+    }
+  }
+
+  const created_count = results.filter((r) => r.status === 'CREATED').length;
+  const failed_count = results.length - created_count;
+
+  ApiResponse.success(res, {
+    statusCode: 201,
+    data: {
+      total_requested: results.length,
+      created_count,
+      failed_count,
+      results,
+    },
+    message: `${created_count} of ${results.length} shows created successfully.`,
+  });
+};
+
 const getShows = async (req, res) => {
   const page = Number.parseInt(req.query.page, 10) || 1;
   const search = req.query.search?.trim() || null;
@@ -169,6 +344,8 @@ const getShows = async (req, res) => {
   const cinema_id = req.query.cinema_id
     ? Number.parseInt(req.query.cinema_id, 10)
     : null;
+  const date_from = req.query.date_from?.trim() || null;
+  const date_to = req.query.date_to?.trim() || null;
 
   if (page < 1) {
     throw new AppError('VALIDATION_ERROR', 'Invalid page parameter.', 400);
@@ -182,12 +359,22 @@ const getShows = async (req, res) => {
     throw new AppError('VALIDATION_ERROR', 'Invalid cinema_id parameter.', 400);
   }
 
+  if (date_from && Number.isNaN(new Date(date_from).getTime())) {
+    throw new AppError('VALIDATION_ERROR', 'Invalid date_from parameter.', 400);
+  }
+
+  if (date_to && Number.isNaN(new Date(date_to).getTime())) {
+    throw new AppError('VALIDATION_ERROR', 'Invalid date_to parameter.', 400);
+  }
+
   const { data, total_pages, current_page, total_shows } =
     await fetchShowsForAdmin({
       page,
       search,
       region_id,
       cinema_id,
+      date_from,
+      date_to,
     });
 
   ApiResponse.success(res, {
@@ -273,8 +460,7 @@ const updateExistingShow = async (req, res) => {
     let runtime = await getMovieRuntimeById(movie_id);
     if (!runtime) {
       const tmdb_id = await getTMDBIdByMovieId(movie_id);
-      if (tmdb_id) await fetchAndUpdateMovieRuntime(tmdb_id);
-      runtime = await getMovieRuntimeById(movie_id);
+      if (tmdb_id) runtime = await fetchAndUpdateMovieRuntime(tmdb_id);
     }
 
     if (!runtime) {
@@ -338,21 +524,7 @@ const updateExistingShow = async (req, res) => {
       );
     } else {
       const seats = await findSeatsByScreenId(screen_id);
-      const seatPriceRows = seats.map((seat) => {
-        const price = category_price.find(
-          (cat) => Number(cat.category_id) === Number(seat.category_id)
-        )?.price;
-
-        if (price === undefined || price === null) {
-          throw new AppError(
-            'MISSING_PRICE',
-            `Missing price for seat_category id ${seat.category_id}`,
-            400
-          );
-        }
-
-        return { seat_id: seat.id, price };
-      });
+      const seatPriceRows = buildSeatPriceRows(seats, category_price);
 
       await updateShowSeatPrices(client, show_id, seatPriceRows);
     }
@@ -419,6 +591,7 @@ const deleteExistingShow = async (req, res) => {
 
 module.exports = {
   createNewShow,
+  bulkCreateShows,
   getShows,
   getShowsByScreenId,
   getShowsByMovieId,

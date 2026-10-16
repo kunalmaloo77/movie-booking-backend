@@ -223,7 +223,10 @@ const fetchShowsForAdmin = async ({
   search = null,
   region_id = null,
   cinema_id = null,
+  date_from = null,
+  date_to = null,
 }) => {
+  const unpaginated = Boolean(date_from && date_to);
   const conditions = ["s.status != 'DELETED'"];
   const values = [];
   let idx = 1;
@@ -244,6 +247,16 @@ const fetchShowsForAdmin = async ({
   if (cinema_id) {
     conditions.push(`c.id = $${idx++}`);
     values.push(cinema_id);
+  }
+
+  if (date_from) {
+    conditions.push(`s.start_time >= $${idx++}`);
+    values.push(date_from);
+  }
+
+  if (date_to) {
+    conditions.push(`s.start_time <= $${idx++}`);
+    values.push(date_to);
   }
 
   const whereClause = `WHERE ${conditions.join(' AND ')}`;
@@ -270,9 +283,9 @@ const fetchShowsForAdmin = async ({
     };
   }
 
-  const totalPages = Math.ceil(totalCount / limit);
-  const safePage = Math.min(Math.max(page, 1), totalPages);
-  const offset = (safePage - 1) * limit;
+  const totalPages = unpaginated ? 1 : Math.ceil(totalCount / limit);
+  const safePage = unpaginated ? 1 : Math.min(Math.max(page, 1), totalPages);
+  const offset = unpaginated ? 0 : (safePage - 1) * limit;
 
   const dataQuery = `
     SELECT
@@ -284,6 +297,7 @@ const fetchShowsForAdmin = async ({
       s.status,
       s.created_at,
       m.title AS movie_title,
+      m.runtime AS movie_runtime,
       scr.name AS screen_name,
       scr.cinema_id,
       c.cinema_name,
@@ -314,6 +328,7 @@ const fetchShowsForAdmin = async ({
     GROUP BY
       s.id,
       m.title,
+      m.runtime,
       scr.name,
       scr.cinema_id,
       c.cinema_name,
@@ -322,10 +337,13 @@ const fetchShowsForAdmin = async ({
       r.city_code,
       l.name
     ORDER BY s.start_time DESC, s.id DESC
-    LIMIT $${idx} OFFSET $${idx + 1};
+    ${unpaginated ? '' : `LIMIT $${idx} OFFSET $${idx + 1}`};
   `;
 
-  const dataResult = await db.query(dataQuery, [...values, limit, offset]);
+  const dataResult = await db.query(
+    dataQuery,
+    unpaginated ? values : [...values, limit, offset]
+  );
   return {
     total_pages: totalPages,
     current_page: safePage,

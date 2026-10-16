@@ -249,6 +249,7 @@ const fetchAndUpdateMovieRuntime = async (tmdb_id) => {
     }
     const data = await response.json();
     await updateMovieRuntime(data?.id, data?.runtime);
+    return data?.runtime;
   } catch (error) {
     throw error;
   }

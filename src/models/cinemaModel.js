@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const crypto = require('crypto');
+const AppError = require('../utils/AppError');
 
 const createCinemaTable = async () => {
   const queryText = `
@@ -21,7 +22,6 @@ const createCinemaTable = async () => {
 };
 
 const createCinema = async (cinema_name, address, city_code) => {
-  // Generate a random cinema code
   const maxRetries = 3;
   let attempts = 0;
   while (attempts < maxRetries) {
@@ -37,13 +37,13 @@ const createCinema = async (cinema_name, address, city_code) => {
       const values = [cinema_name, cinema_code, address, city_code];
       const result = await db.query(queryText, values);
       if (result.rows.length === 0) {
-        throw new Error(`Region with city code ${city_code} not found`);
+        throw new AppError('REGION_ERROR', `Region with city code ${city_code} not found`, 404);
       }
       return result.rows[0];
     } catch (error) {
       if (error.code === '23505' && attempts < maxRetries - 1) {
         attempts++;
-        continue; // retry with new code
+        continue;
       }
       throw error;
     }
@@ -75,44 +75,59 @@ const getCinemaByRegionId = async (region_id) => {
 };
 
 const searchCinemas = async (data) => {
-  const { region_id, movie_id, selectedDate, q } = data;
-  let conditions = [];
-  let values = [];
+  const { region_id, movie_id, selected_date, q } = data;
+  const conditions = [];
+  const values = [];
   let idx = 1;
-  if (selectedDate) {
-    conditions.push(`s.start_time::date = $${idx++} and s.start_time > NOW() `);
-    values.push(selectedDate);
-  }
+
   if (region_id) {
-    conditions.push('r.id = $' + idx++);
+    conditions.push(`r.id = $${idx++}`);
     values.push(region_id);
   }
+
+  if (q) {
+    conditions.push(
+      `(c.cinema_name ILIKE $${idx} OR r.city_name ILIKE $${idx} OR r.city_code ILIKE $${idx} OR c.address ILIKE $${idx})`
+    );
+    values.push(`%${q}%`);
+    idx += 1;
+  }
+
+  if (selected_date) {
+    conditions.push(`s.start_time::date = $${idx++}`);
+    values.push(selected_date);
+  }
+
   if (movie_id) {
-    conditions.push('s.movie_id = $' + idx++);
+    conditions.push(`s.movie_id = $${idx++}`);
     values.push(movie_id);
   }
-  if (q) {
-    conditions.push('c.cinema_name ILIKE $' + idx++);
-    values.push(`%${q}%`);
+
+  if (selected_date || movie_id) {
+    conditions.push('s.start_time > NOW()');
   }
-  const whereClause =
-    conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
   const queryText = `
       SELECT DISTINCT ON (c.id)
-        c.id as cinema_id,
+        c.id AS cinema_id,
         c.cinema_name,
         c.cinema_code,
         c.address,
+        r.city_name,
+        r.city_code,
         s.start_time,
-        s.id as show_id
-      FROM cinemas as c
-      JOIN regions as r ON c.region_id = r.id
-      JOIN screens as scr ON c.id = scr.cinema_id
-      JOIN shows as s ON scr.id = s.screen_id
+        s.id AS show_id
+      FROM cinemas AS c
+      LEFT JOIN regions AS r ON c.region_id = r.id
+      LEFT JOIN screens AS scr ON c.id = scr.cinema_id
+      LEFT JOIN shows AS s ON scr.id = s.screen_id
       ${whereClause}
-      ORDER BY c.id, s.start_time
+      ORDER BY c.id, s.start_time NULLS LAST
       LIMIT 10;
     `;
+
   const result = await db.query(queryText, values);
   return result.rows;
 };

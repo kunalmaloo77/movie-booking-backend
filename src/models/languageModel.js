@@ -60,8 +60,6 @@ const getLanguageIdByName = async (name) => {
   return result.rows[0]?.id ?? null;
 };
 
-// Resolves the default language id (English). The languages table is always
-// seeded at startup, so this never returns null in normal operation.
 const getDefaultLanguageId = async () => {
   return getLanguageIdByName('English');
 };
