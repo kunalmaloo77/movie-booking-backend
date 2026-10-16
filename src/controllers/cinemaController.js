@@ -8,6 +8,16 @@ const ApiResponse = require('../utils/ApiResponse.js');
 
 const createCinema = async (req, res) => {
   const { cinema_name, address, city_code } = req.body;
+
+  const missingFields = Object.entries({ cinema_name, address, city_code })
+  .filter(([_, value]) => !value)
+  .map(([key]) => key)
+
+  if (missingFields.length > 0) {
+    throw new AppError('MISSING_FIELDS', 'Missing required details', 400, {
+      missingFields,
+    });
+  }
   const cinema = await createCinemaModel(cinema_name, address, city_code);
   ApiResponse.success(res, { data: cinema, statusCode: 201 });
 };

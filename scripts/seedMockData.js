@@ -614,18 +614,18 @@ async function main() {
     if (RESET) await resetTables();
 
     const regionMap = await seedRegions();
-    const cinemaMap = await seedCinemas(regionMap);
-    const screenTypeMap = await seedScreenTypes();
-    const categoryMap = await seedSeatCategories();
-    const screenMap = await seedScreens(cinemaMap, screenTypeMap);
-    const seatsByScreen = await seedSeats(screenMap, categoryMap);
-    const genreMap = await seedGenres();
-    const languageMap = await seedLanguages();
-    const movieList = await seedMovies(genreMap);
-    const showList = await seedShows(screenMap, movieList, languageMap);
-    await seedShowSeats(showList, seatsByScreen);
+    // const cinemaMap = await seedCinemas(regionMap);
+    // const screenTypeMap = await seedScreenTypes();
+    // const categoryMap = await seedSeatCategories();
+    // const screenMap = await seedScreens(cinemaMap, screenTypeMap);
+    // const seatsByScreen = await seedSeats(screenMap, categoryMap);
+    // const genreMap = await seedGenres();
+    // const languageMap = await seedLanguages();
+    // const movieList = await seedMovies(genreMap);
+    // const showList = await seedShows(screenMap, movieList, languageMap);
+    // await seedShowSeats(showList, seatsByScreen);
     const userList = await seedUsers(regionMap);
-    await seedBookings(userList, showList, seatsByScreen);
+    // await seedBookings(userList, showList, seatsByScreen);
 
     console.log('\n=== Seed complete ===');
     console.log('Login: user01@mockcinema.com / Password@123');

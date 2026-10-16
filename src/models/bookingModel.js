@@ -424,6 +424,40 @@ const fetchAdminRevenue = async () => {
   return res.rows;
 };
 
+const fetchTopBookedMovies = async () => {
+  const queryText = `
+    select
+      movies.id,
+      movies.title,
+      count(bookings) as booking_count
+      from bookings
+      join shows on bookings.show_id = shows.id
+      join movies on shows.movie_id = movies.id
+      where bookings.status = 'PAYMENT_SUCCESS'
+      group by movies.id
+      order by booking_count desc
+      limit 5;
+  `;
+  const res = await db.query(queryText);
+  return res.rows;
+};
+
+const fetchDailyBookingStats = async (days) => {
+  const queryText = `
+    select
+      date_trunc('day', bookings.created_at) as booking_date,
+      count(bookings) as number_of_bookings,
+      sum(bookings.amount) as total_amount
+      from bookings
+      where bookings.status = 'PAYMENT_SUCCESS'
+        and bookings.created_at >= NOW() - ($1 || ' days')::interval
+      group by date_trunc('day', bookings.created_at)
+      order by booking_date asc;
+  `;
+  const res = await db.query(queryText, [days]);
+  return res.rows;
+};
+
 module.exports = {
   createBookingTable,
   createBookingSeatsTable,
@@ -433,4 +467,6 @@ module.exports = {
   fetchBookingsByUserId,
   releaseExpiredReservations,
   fetchAdminRevenue,
+  fetchTopBookedMovies,
+  fetchDailyBookingStats,
 };

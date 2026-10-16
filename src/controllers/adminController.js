@@ -3,7 +3,11 @@ const jwt = require('jsonwebtoken');
 const { findUserByEmailOrUsername } = require('../models/userModel');
 const AppError = require('../utils/AppError');
 const ApiResponse = require('../utils/ApiResponse');
-const { fetchAdminRevenue } = require('../models/bookingModel');
+const {
+  fetchAdminRevenue,
+  fetchTopBookedMovies,
+  fetchDailyBookingStats,
+} = require('../models/bookingModel');
 
 const adminLogin = async (req, res) => {
   const { email, password } = req.body;
@@ -62,4 +66,33 @@ const getAdminRevenue = async (req, res) => {
   }
 };
 
-module.exports = { adminLogin, getAdminRevenue };
+const getTopMovies = async (req, res) => {
+  try {
+    const movies = await fetchTopBookedMovies();
+    ApiResponse.success(res, {
+      data: movies,
+      message: 'Successfully fetched top booked movies',
+    });
+  } catch (error) {
+    throw new AppError('INTERNAL_SERVER_ERROR', 'Server Error', 500);
+  }
+};
+
+const getDailyBookings = async (req, res) => {
+  try {
+    const parsedDays = parseInt(req.query.days, 10);
+    const days =
+      Number.isInteger(parsedDays) && parsedDays > 0
+        ? Math.min(parsedDays, 365)
+        : 30;
+    const stats = await fetchDailyBookingStats(days);
+    ApiResponse.success(res, {
+      data: stats,
+      message: 'Successfully fetched daily booking stats',
+    });
+  } catch (error) {
+    throw new AppError('INTERNAL_SERVER_ERROR', 'Server Error', 500);
+  }
+};
+
+module.exports = { adminLogin, getAdminRevenue, getTopMovies, getDailyBookings };

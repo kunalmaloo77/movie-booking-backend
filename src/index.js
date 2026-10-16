@@ -92,6 +92,7 @@ app.use(errorHandler);
 
 const startServer = async () => {
   try {
+    await db.query('SELECT 1');
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });
